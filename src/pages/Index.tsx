@@ -13,7 +13,7 @@ const Index = () => {
       <header className="container mx-auto px-4 py-6">
         <nav className="flex justify-between items-center">
           <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            WristCraft
+            EU Wristbands
           </h1>
           <div className="flex gap-3">
             <Button variant="ghost" onClick={() => navigate("/auth")}>
@@ -55,7 +55,7 @@ const Index = () => {
         {/* Features */}
         <section className="container mx-auto px-4 py-20">
           <h3 className="text-3xl md:text-4xl font-bold text-center mb-12">
-            Why Choose WristCraft?
+            Why Choose EU Wristbands?
           </h3>
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             <Card className="hover:shadow-xl transition-shadow animate-scale-in">
@@ -114,7 +114,7 @@ const Index = () => {
 
       <footer className="border-t mt-20 py-8">
         <div className="container mx-auto px-4 text-center text-muted-foreground">
-          <p>&copy; 2024 WristCraft. All rights reserved.</p>
+          <p>&copy; 2024 EU Wristbands. All rights reserved.</p>
         </div>
       </footer>
     </div>

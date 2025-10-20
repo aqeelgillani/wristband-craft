@@ -11,12 +11,14 @@ interface Order {
   id: string;
   quantity: number;
   total_price: number;
+  unit_price: number;
   status: string;
   created_at: string;
   designs: {
     design_url: string;
     custom_text: string | null;
     wristband_color: string;
+    wristband_type: string;
   } | null;
 }
 
@@ -44,7 +46,8 @@ const MyOrders = () => {
           designs (
             design_url,
             custom_text,
-            wristband_color
+            wristband_color,
+            wristband_type
           )
         `)
         .eq("user_id", session.user.id)
@@ -131,12 +134,20 @@ const MyOrders = () => {
                     )}
                     <div className="space-y-2">
                       <div className="flex justify-between">
+                        <span className="text-muted-foreground">Type:</span>
+                        <span className="font-semibold capitalize">{order.designs?.wristband_type || "N/A"}</span>
+                      </div>
+                      <div className="flex justify-between">
                         <span className="text-muted-foreground">Quantity:</span>
                         <span className="font-semibold">{order.quantity}</span>
                       </div>
                       <div className="flex justify-between">
+                        <span className="text-muted-foreground">Unit Price:</span>
+                        <span className="font-semibold">${order.unit_price}</span>
+                      </div>
+                      <div className="flex justify-between">
                         <span className="text-muted-foreground">Total:</span>
-                        <span className="font-semibold">${order.total_price}</span>
+                        <span className="font-semibold text-primary">${order.total_price}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Date:</span>

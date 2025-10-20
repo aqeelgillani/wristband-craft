@@ -25,6 +25,7 @@ export type Database = {
           updated_at: string
           user_id: string
           wristband_color: string | null
+          wristband_type: string | null
         }
         Insert: {
           created_at?: string
@@ -36,6 +37,7 @@ export type Database = {
           updated_at?: string
           user_id: string
           wristband_color?: string | null
+          wristband_type?: string | null
         }
         Update: {
           created_at?: string
@@ -47,6 +49,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
           wristband_color?: string | null
+          wristband_type?: string | null
         }
         Relationships: [
           {
@@ -66,7 +69,10 @@ export type Database = {
           quantity: number
           shipping_address: Json | null
           status: string
+          stripe_payment_intent_id: string | null
+          stripe_session_id: string | null
           total_price: number
+          unit_price: number | null
           user_id: string
         }
         Insert: {
@@ -76,7 +82,10 @@ export type Database = {
           quantity?: number
           shipping_address?: Json | null
           status?: string
+          stripe_payment_intent_id?: string | null
+          stripe_session_id?: string | null
           total_price?: number
+          unit_price?: number | null
           user_id: string
         }
         Update: {
@@ -86,7 +95,10 @@ export type Database = {
           quantity?: number
           shipping_address?: Json | null
           status?: string
+          stripe_payment_intent_id?: string | null
+          stripe_session_id?: string | null
           total_price?: number
+          unit_price?: number | null
           user_id?: string
         }
         Relationships: [
@@ -124,15 +136,42 @@ export type Database = {
         }
         Relationships: []
       }
+      user_roles: {
+        Row: {
+          created_at: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "user"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -259,6 +298,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "user"],
+    },
   },
 } as const
