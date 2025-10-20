@@ -63,9 +63,15 @@ export type Database = {
       }
       orders: {
         Row: {
+          admin_notes: string | null
+          base_price: number
           created_at: string
+          currency: string
           design_id: string | null
+          extra_charges: Json | null
+          has_secure_guests: boolean | null
           id: string
+          print_type: string | null
           quantity: number
           shipping_address: Json | null
           status: string
@@ -76,9 +82,15 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          admin_notes?: string | null
+          base_price?: number
           created_at?: string
+          currency?: string
           design_id?: string | null
+          extra_charges?: Json | null
+          has_secure_guests?: boolean | null
           id?: string
+          print_type?: string | null
           quantity?: number
           shipping_address?: Json | null
           status?: string
@@ -89,9 +101,15 @@ export type Database = {
           user_id: string
         }
         Update: {
+          admin_notes?: string | null
+          base_price?: number
           created_at?: string
+          currency?: string
           design_id?: string | null
+          extra_charges?: Json | null
+          has_secure_guests?: boolean | null
           id?: string
+          print_type?: string | null
           quantity?: number
           shipping_address?: Json | null
           status?: string
@@ -118,20 +136,83 @@ export type Database = {
           },
         ]
       }
+      pricing_config: {
+        Row: {
+          base_price_eur: number
+          base_price_gbp: number
+          base_price_usd: number
+          black_print_extra_eur: number
+          black_print_extra_gbp: number
+          black_print_extra_usd: number
+          created_at: string | null
+          full_color_print_extra_eur: number
+          full_color_print_extra_gbp: number
+          full_color_print_extra_usd: number
+          id: string
+          min_quantity: number
+          secure_guests_extra_eur: number
+          secure_guests_extra_gbp: number
+          secure_guests_extra_usd: number
+          updated_at: string | null
+          wristband_type: string
+        }
+        Insert: {
+          base_price_eur: number
+          base_price_gbp: number
+          base_price_usd: number
+          black_print_extra_eur?: number
+          black_print_extra_gbp?: number
+          black_print_extra_usd?: number
+          created_at?: string | null
+          full_color_print_extra_eur?: number
+          full_color_print_extra_gbp?: number
+          full_color_print_extra_usd?: number
+          id?: string
+          min_quantity?: number
+          secure_guests_extra_eur?: number
+          secure_guests_extra_gbp?: number
+          secure_guests_extra_usd?: number
+          updated_at?: string | null
+          wristband_type: string
+        }
+        Update: {
+          base_price_eur?: number
+          base_price_gbp?: number
+          base_price_usd?: number
+          black_print_extra_eur?: number
+          black_print_extra_gbp?: number
+          black_print_extra_usd?: number
+          created_at?: string | null
+          full_color_print_extra_eur?: number
+          full_color_print_extra_gbp?: number
+          full_color_print_extra_usd?: number
+          id?: string
+          min_quantity?: number
+          secure_guests_extra_eur?: number
+          secure_guests_extra_gbp?: number
+          secure_guests_extra_usd?: number
+          updated_at?: string | null
+          wristband_type?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
           email: string
+          full_name: string | null
           id: string
         }
         Insert: {
           created_at?: string
           email: string
+          full_name?: string | null
           id: string
         }
         Update: {
           created_at?: string
           email?: string
+          full_name?: string | null
           id?: string
         }
         Relationships: []

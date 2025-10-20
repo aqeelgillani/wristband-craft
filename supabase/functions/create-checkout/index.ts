@@ -24,18 +24,21 @@ serve(async (req) => {
     const user = data.user;
     if (!user?.email) throw new Error("User not authenticated");
 
-    const { orderId, quantity = 1, wristbandType = "silicone" } = await req.json();
+    const { orderId } = await req.json();
     
-    // Price per wristband based on type
-    const prices: Record<string, number> = {
-      silicone: 2.99,
-      fabric: 3.99,
-      vinyl: 3.49,
-      tyvek: 1.99,
-    };
-    
-    const unitPrice = prices[wristbandType] || 2.99;
-    const totalAmount = Math.round(unitPrice * quantity * 100); // in cents
+    // Get order details from database
+    const { data: order, error: orderError } = await supabaseClient
+      .from("orders")
+      .select("*")
+      .eq("id", orderId)
+      .single();
+
+    if (orderError || !order) {
+      throw new Error("Order not found");
+    }
+
+    const totalAmount = Math.round(order.total_price * 100); // Convert to cents
+    const currency = (order.currency || "USD").toLowerCase();
 
     const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
       apiVersion: "2025-08-27.basil",
@@ -47,20 +50,29 @@ serve(async (req) => {
       customerId = customers.data[0].id;
     }
 
+    // Build product description
+    let description = `Custom ${order.wristband_type} wristband`;
+    if (order.print_type && order.print_type !== "none") {
+      description += ` with ${order.print_type === "black" ? "black print" : "full color print"}`;
+    }
+    if (order.has_secure_guests) {
+      description += " + secure guests option";
+    }
+
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
       customer_email: customerId ? undefined : user.email,
       line_items: [
         {
           price_data: {
-            currency: "usd",
+            currency: currency,
             product_data: {
-              name: `Custom ${wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)} Wristband`,
-              description: "Custom designed wristband",
+              name: `EU Wristbands - ${order.wristband_type.charAt(0).toUpperCase() + order.wristband_type.slice(1)}`,
+              description: description,
             },
-            unit_amount: Math.round(unitPrice * 100),
+            unit_amount: totalAmount,
           },
-          quantity: quantity,
+          quantity: 1,
         },
       ],
       mode: "payment",
@@ -78,7 +90,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
       status: 200,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in create-checkout:", error);
     return new Response(JSON.stringify({ error: error.message }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -6,28 +6,41 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { z } from "zod";
-
-const emailSchema = z.string().email("Invalid email address");
-const passwordSchema = z.string().min(6, "Password must be at least 6 characters");
+import { LogIn, Mail } from "lucide-react";
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
+  const navigate = useNavigate();
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        navigate("/dashboard");
+      }
+    };
+    checkSession();
+  }, [navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate inputs
-    try {
-      emailSchema.parse(email);
-      passwordSchema.parse(password);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        toast.error(error.errors[0].message);
+    if (isSignUp) {
+      if (!fullName.trim()) {
+        toast.error("Please enter your full name");
+        return;
+      }
+      if (password !== confirmPassword) {
+        toast.error("Passwords do not match");
+        return;
+      }
+      if (password.length < 6) {
+        toast.error("Password must be at least 6 characters");
         return;
       }
     }
@@ -35,48 +48,47 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (error) {
-          if (error.message.includes("Invalid login credentials")) {
-            toast.error("Invalid email or password");
-          } else {
-            toast.error(error.message);
-          }
-          return;
-        }
-
-        toast.success("Welcome back!");
-        navigate("/dashboard");
-      } else {
-        const redirectUrl = `${window.location.origin}/dashboard`;
+      if (isSignUp) {
         const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            emailRedirectTo: redirectUrl,
+            emailRedirectTo: `${window.location.origin}/dashboard`,
+            data: {
+              full_name: fullName,
+            },
           },
         });
-
-        if (error) {
-          if (error.message.includes("already registered")) {
-            toast.error("This email is already registered. Please log in.");
-          } else {
-            toast.error(error.message);
-          }
-          return;
-        }
-
-        toast.success("Account created! Welcome to WristCraft!");
+        if (error) throw error;
+        toast.success("Sign up successful! Please check your email to confirm.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        toast.success("Signed in successfully!");
         navigate("/dashboard");
       }
-    } catch (error) {
-      toast.error("An unexpected error occurred");
+    } catch (error: any) {
+      toast.error(error.message);
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoading(true);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/dashboard`,
+        },
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      toast.error(error.message);
       setLoading(false);
     }
   };
@@ -86,20 +98,33 @@ const Auth = () => {
       <Card className="w-full max-w-md shadow-xl animate-scale-in">
         <CardHeader className="space-y-1 text-center">
           <CardTitle className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            {isLogin ? "Welcome Back" : "Create Account"}
+            {isSignUp ? "Create Account" : "Welcome Back"}
           </CardTitle>
           <CardDescription>
-            {isLogin ? "Sign in to your account" : "Start designing your custom wristbands"}
+            {isSignUp ? "Sign up to start designing wristbands" : "Sign in to access your account"}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleAuth} className="space-y-4">
+            {isSignUp && (
+              <div className="space-y-2">
+                <Label htmlFor="fullName">Full Name</Label>
+                <Input
+                  id="fullName"
+                  type="text"
+                  placeholder="John Doe"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  required
+                />
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
                 id="email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder="your@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -114,19 +139,55 @@ const Auth = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={6}
               />
             </div>
-            <Button type="submit" className="w-full" variant="hero" disabled={loading}>
-              {loading ? "Loading..." : isLogin ? "Sign In" : "Sign Up"}
+            {isSignUp && (
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
+                <Input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="••••••••"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+              </div>
+            )}
+            <Button type="submit" className="w-full" disabled={loading} variant="hero">
+              <LogIn className="h-4 w-4 mr-2" />
+              {loading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
             </Button>
           </form>
+          
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+          >
+            <Mail className="h-4 w-4 mr-2" />
+            Google
+          </Button>
+
           <div className="mt-4 text-center text-sm">
             <button
               type="button"
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => setIsSignUp(!isSignUp)}
               className="text-primary hover:underline"
             >
-              {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+              {isSignUp ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
             </button>
           </div>
         </CardContent>
