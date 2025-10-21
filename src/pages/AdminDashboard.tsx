@@ -58,14 +58,14 @@ const AdminDashboard = () => {
 
       if (roleError || !roles) {
         toast.error("Access denied - Admin only");
-        navigate("/dashboard");
+        navigate("/admin");
         return;
       }
 
       setIsAdmin(true);
       fetchOrders();
     } catch (error) {
-      navigate("/dashboard");
+      navigate("/admin");
     }
   };
 
