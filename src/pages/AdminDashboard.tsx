@@ -57,7 +57,7 @@ const AdminDashboard = () => {
         .maybeSingle();
 
       if (roleError || !roles) {
-        toast.error("Access denied - Admin only");
+        // toast.error("Access denied - Admin only");
         navigate("/admin");
         return;
       }
