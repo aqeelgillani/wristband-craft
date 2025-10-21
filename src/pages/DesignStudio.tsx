@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { ArrowLeft, ShoppingCart, Loader2 } from "lucide-react";
-import { Canvas as FabricCanvas, Image as FabricImage } from "fabric";
+import { Canvas as FabricCanvas, Image as FabricImage, IText } from "fabric";
 
 type Currency = "USD" | "EUR" | "GBP";
 type WristbandType = "silicone" | "fabric" | "vinyl" | "tyvek";
@@ -28,6 +28,7 @@ const DesignStudio = () => {
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [uploadedImage, setUploadedImage] = useState<FabricImage | null>(null);
+  const [customText, setCustomText] = useState("");
   const [wristbandColor, setWristbandColor] = useState("#FFFFFF");
   const [wristbandType, setWristbandType] = useState<WristbandType>("silicone");
   const [quantity, setQuantity] = useState(1000);
@@ -41,12 +42,14 @@ const DesignStudio = () => {
   useEffect(() => {
     if (!canvasContainerRef.current || fabricCanvas) return;
     const canvas = new FabricCanvas(canvasContainerRef.current.querySelector("canvas")!, {
-      width: 800,
-      height: 300,
+      width: 1200,
+      height: 100,
       backgroundColor: wristbandColor,
     });
     setFabricCanvas(canvas);
-    return () => canvas.dispose();
+    return () => {
+      canvas.dispose();
+    };
   }, []);
 
   useEffect(() => {
@@ -99,6 +102,32 @@ const DesignStudio = () => {
       });
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleAddText = () => {
+    if (!fabricCanvas || !customText.trim()) {
+      toast.error("Please enter text to add");
+      return;
+    }
+
+    const text = new IText(customText, {
+      left: fabricCanvas.width! / 2,
+      top: fabricCanvas.height! / 2,
+      fontSize: 24,
+      fill: "#FFFFFF",
+      fontFamily: "Arial",
+    });
+
+    text.set({
+      left: fabricCanvas.width! / 2 - text.width! / 2,
+      top: fabricCanvas.height! / 2 - text.height! / 2,
+    });
+
+    fabricCanvas.add(text);
+    fabricCanvas.setActiveObject(text);
+    fabricCanvas.renderAll();
+    setCustomText("");
+    toast.success("Text added to design");
   };
 
   const handlePlaceOrder = async () => {
@@ -154,14 +183,23 @@ const DesignStudio = () => {
       }).select().single();
       if (orderError) throw orderError;
 
-      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-checkout", {
-        body: { orderId: order.id },
+      // Navigate to order summary page
+      navigate("/order-summary", {
+        state: {
+          orderId: order.id,
+          designUrl: publicUrl,
+          orderDetails: {
+            quantity,
+            total_price: pricing.totalPrice,
+            unit_price: pricing.unitPrice,
+            currency,
+            wristband_type: wristbandType,
+            print_type: printType,
+            has_secure_guests: hasSecureGuests,
+          },
+        },
       });
-      if (checkoutError || !checkoutData?.url) throw new Error("Failed to create checkout");
-
-      await supabase.from("orders").update({ stripe_session_id: checkoutData.sessionId }).eq("id", order.id);
-      window.open(checkoutData.url, "_blank");
-      toast.success("Redirecting to checkout...");
+      toast.success("Proceeding to order summary...");
     } catch (error: any) {
       toast.error(error.message || "An error occurred");
     } finally {
@@ -189,10 +227,41 @@ const DesignStudio = () => {
         <div className="grid lg:grid-cols-2 gap-8">
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Design Preview</h2>
-            <div ref={canvasContainerRef} className="bg-muted rounded-lg p-8 flex items-center justify-center" style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.1)" }}>
-              <div style={{ transform: "perspective(1000px) rotateX(-5deg) rotateY(2deg)", transformStyle: "preserve-3d", boxShadow: "0 20px 50px rgba(0,0,0,0.3)", borderRadius: "8px" }}>
-                <canvas className="rounded-lg" />
+            <p className="text-sm text-muted-foreground mb-4">Create your custom wristband design (0.5" height, customizable length)</p>
+            <div ref={canvasContainerRef} className="bg-muted rounded-lg p-8 flex items-center justify-center overflow-x-auto" style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.1)" }}>
+              <div style={{ transform: "perspective(1000px) rotateX(-5deg)", transformStyle: "preserve-3d", boxShadow: "0 10px 30px rgba(0,0,0,0.3)", borderRadius: "4px" }}>
+                <canvas className="rounded" />
               </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => {
+                  if (fabricCanvas) {
+                    fabricCanvas.remove(...fabricCanvas.getObjects());
+                    setUploadedImage(null);
+                    toast.success("Canvas cleared");
+                  }
+                }}
+              >
+                Clear Canvas
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => {
+                  const activeObject = fabricCanvas?.getActiveObject();
+                  if (activeObject) {
+                    fabricCanvas?.remove(activeObject);
+                    toast.success("Object removed");
+                  } else {
+                    toast.error("Select an object to delete");
+                  }
+                }}
+              >
+                Delete Selected
+              </Button>
             </div>
           </Card>
 
@@ -250,6 +319,23 @@ const DesignStudio = () => {
               <div>
                 <Label>Upload Your Design</Label>
                 <Input type="file" accept="image/*" onChange={handleImageUpload} className="mt-2" />
+                <p className="text-xs text-muted-foreground mt-1">Max 5MB. Drag and resize on canvas.</p>
+              </div>
+              <div>
+                <Label>Add Custom Text</Label>
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    type="text"
+                    value={customText}
+                    onChange={(e) => setCustomText(e.target.value)}
+                    placeholder="Enter your text"
+                    onKeyDown={(e) => e.key === "Enter" && handleAddText()}
+                  />
+                  <Button onClick={handleAddText} variant="outline">
+                    Add Text
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Click text on canvas to edit, drag to position.</p>
               </div>
               <div className="bg-secondary/20 p-4 rounded-lg space-y-2">
                 <h3 className="font-semibold text-lg mb-3">Order Summary</h3>
@@ -269,7 +355,7 @@ const DesignStudio = () => {
               </div>
               <Button onClick={handlePlaceOrder} disabled={saving || !pricing || !fabricCanvas?.getObjects().length} variant="hero" className="w-full">
                 <ShoppingCart className="h-4 w-4 mr-2" />
-                {pricing ? `Checkout ${currencySymbol}${pricing.totalPrice.toFixed(2)}` : "Place Order"}
+                {pricing ? `Continue to Summary ${currencySymbol}${pricing.totalPrice.toFixed(2)}` : "Continue"}
               </Button>
             </div>
           </Card>

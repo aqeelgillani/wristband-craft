@@ -10,6 +10,7 @@ import DesignStudio from "./pages/DesignStudio";
 import MyDesigns from "./pages/MyDesigns";
 import MyOrders from "./pages/MyOrders";
 import AdminDashboard from "./pages/AdminDashboard";
+import OrderSummary from "./pages/OrderSummary";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -53,6 +54,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <MyOrders />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/order-summary"
+            element={
+              <ProtectedRoute>
+                <OrderSummary />
               </ProtectedRoute>
             }
           />

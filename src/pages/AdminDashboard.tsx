@@ -109,20 +109,30 @@ const AdminDashboard = () => {
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
     try {
-      const { error } = await supabase
-        .from("orders")
-        .update({ status: newStatus })
-        .eq("id", orderId);
+      const { error } = await supabase.functions.invoke("update-order-status", {
+        body: { orderId, status: newStatus },
+      });
 
-      if (error) {
-        toast.error("Failed to update status");
-        return;
+      if (error) throw error;
+
+      // Send email notification if order is approved
+      if (newStatus === "approved") {
+        const { error: emailError } = await supabase.functions.invoke("send-order-confirmation", {
+          body: { orderId },
+        });
+        if (emailError) {
+          console.error("Failed to send confirmation email:", emailError);
+          toast.warning("Order approved but email notification failed");
+        } else {
+          toast.success("Order approved and confirmation email sent");
+        }
+      } else {
+        toast.success(`Order status updated to ${newStatus}`);
       }
 
-      toast.success("Order status updated");
       fetchOrders();
-    } catch (error) {
-      toast.error("An error occurred");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to update order status");
     }
   };
 
@@ -233,6 +243,8 @@ const AdminDashboard = () => {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="approved">Approve</SelectItem>
+                        <SelectItem value="declined">Decline</SelectItem>
                         <SelectItem value="processing">Processing</SelectItem>
                         <SelectItem value="completed">Completed</SelectItem>
                         <SelectItem value="cancelled">Cancelled</SelectItem>
