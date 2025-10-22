@@ -26,10 +26,15 @@ serve(async (req) => {
 
     const { orderId } = await req.json();
     
-    // Get order details from database
+    // Get order details with design info from database
     const { data: order, error: orderError } = await supabaseClient
       .from("orders")
-      .select("*")
+      .select(`
+        *,
+        designs (
+          wristband_type
+        )
+      `)
       .eq("id", orderId)
       .single();
 
@@ -51,7 +56,8 @@ serve(async (req) => {
     }
 
     // Build product description
-    let description = `Custom ${order.wristband_type} wristband`;
+    const wristbandType = order.designs?.wristband_type || "silicone";
+    let description = `Custom ${wristbandType} wristband`;
     if (order.print_type && order.print_type !== "none") {
       description += ` with ${order.print_type === "black" ? "black print" : "full color print"}`;
     }
@@ -67,7 +73,7 @@ serve(async (req) => {
           price_data: {
             currency: currency,
             product_data: {
-              name: `EU Wristbands - ${order.wristband_type.charAt(0).toUpperCase() + order.wristband_type.slice(1)}`,
+              name: `EU Wristbands - ${wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)}`,
               description: description,
             },
             unit_amount: totalAmount,
