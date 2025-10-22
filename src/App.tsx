@@ -10,6 +10,7 @@ import DesignStudio from "./pages/DesignStudio";
 import MyDesigns from "./pages/MyDesigns";
 import MyOrders from "./pages/MyOrders";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminPasswordReset from "./pages/AdminPasswordReset";
 import OrderSummary from "./pages/OrderSummary";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
@@ -70,6 +71,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/reset-password"
+            element={
+              <ProtectedRoute>
+                <AdminPasswordReset />
               </ProtectedRoute>
             }
           />

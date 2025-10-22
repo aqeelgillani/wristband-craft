@@ -67,6 +67,15 @@ const OrderSummary = () => {
       // Update order with stripe session id
       await supabase.from("orders").update({ stripe_session_id: checkoutData.sessionId }).eq("id", state.orderId);
 
+      // Send admin notification about new order
+      try {
+        await supabase.functions.invoke("send-admin-notification", {
+          body: { orderId: state.orderId },
+        });
+      } catch (notificationError) {
+        console.error("Failed to send admin notification:", notificationError);
+      }
+
       window.open(checkoutData.url, "_blank");
       toast.success("Redirecting to checkout...");
       
