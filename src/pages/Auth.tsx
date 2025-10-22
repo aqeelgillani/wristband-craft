@@ -49,7 +49,7 @@ const Auth = () => {
 
     try {
       if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: {
@@ -60,7 +60,23 @@ const Auth = () => {
           },
         });
         if (error) throw error;
-        toast.success("Sign up successful! Please check your email to confirm.");
+        
+        // Send verification email via Resend
+        if (data.user && !data.user.confirmed_at) {
+          try {
+            await supabase.functions.invoke("send-verification-email", {
+              body: {
+                email: email,
+                fullName: fullName,
+                confirmationUrl: `${window.location.origin}/auth/confirm?token=${data.user.id}`,
+              },
+            });
+          } catch (emailError) {
+            console.error("Error sending verification email:", emailError);
+          }
+        }
+        
+        toast.success("Sign up successful! Please check your email to verify your account.");
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
