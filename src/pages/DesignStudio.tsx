@@ -8,19 +8,48 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { ArrowLeft, ShoppingCart, Loader2 } from "lucide-react";
-import { Canvas as FabricCanvas, Image as FabricImage, IText } from "fabric";
+import { ArrowLeft, ShoppingCart, Loader2, Save, Download, Printer, Trash2, Plus } from "lucide-react";
+import { Canvas as FabricCanvas, Image as FabricImage, IText, Line, Rect } from "fabric";
 
-type Currency = "USD" | "EUR" | "GBP";
+type Currency = "EUR";
 type WristbandType = "silicone" | "fabric" | "vinyl" | "tyvek";
-type PrintType = "none" | "black" | "full_color";
+type PrintType = "none" | "print";
+
+const TYVEK_COLORS = [
+  { name: "White", value: "#FFFFFF" },
+  { name: "Black", value: "#000000" },
+  { name: "Silver", value: "#C0C0C0" },
+  { name: "Yellow", value: "#FFFF00" },
+  { name: "Neon Yellow", value: "#DFFF00" },
+  { name: "Gold", value: "#FFD700" },
+  { name: "Red", value: "#FF0000" },
+  { name: "Neon Red", value: "#FF073A" },
+  { name: "Orange", value: "#FF8C00" },
+  { name: "Neon Green", value: "#39FF14" },
+  { name: "Green", value: "#00FF00" },
+  { name: "Sky Blue", value: "#87CEEB" },
+  { name: "Blue", value: "#0000FF" },
+  { name: "Aqua", value: "#00FFFF" },
+  { name: "Purple", value: "#800080" },
+  { name: "Pink", value: "#FF69B4" },
+  { name: "Magenta", value: "#FF00FF" },
+  { name: "Violet", value: "#8B00FF" },
+];
 
 interface PricingData {
   basePrice: number;
-  extraCharges: { blackPrint?: number; fullColorPrint?: number; secureGuests?: number };
+  extraCharges: { print?: number; trademark?: number; qrCode?: number };
   unitPrice: number;
   totalPrice: number;
   minQuantity: number;
+}
+
+interface SavedTemplate {
+  id: string;
+  design_url: string;
+  wristband_color: string;
+  wristband_type: string;
+  created_at: string;
 }
 
 const DesignStudio = () => {
@@ -30,14 +59,18 @@ const DesignStudio = () => {
   const [uploadedImage, setUploadedImage] = useState<FabricImage | null>(null);
   const [customText, setCustomText] = useState("");
   const [wristbandColor, setWristbandColor] = useState("#FFFFFF");
-  const [wristbandType, setWristbandType] = useState<WristbandType>("silicone");
+  const [wristbandType, setWristbandType] = useState<WristbandType>("tyvek");
   const [quantity, setQuantity] = useState(1000);
-  const [currency, setCurrency] = useState<Currency>("USD");
+  const [currency] = useState<Currency>("EUR");
   const [printType, setPrintType] = useState<PrintType>("none");
-  const [hasSecureGuests, setHasSecureGuests] = useState(false);
+  const [hasTrademark, setHasTrademark] = useState(false);
+  const [hasQrCode, setHasQrCode] = useState(false);
+  const [trademarkText, setTrademarkText] = useState("");
   const [pricing, setPricing] = useState<PricingData | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
+  const [bands, setBands] = useState([{ id: 1 }]);
 
   useEffect(() => {
     if (!canvasContainerRef.current || fabricCanvas) return;
@@ -46,7 +79,30 @@ const DesignStudio = () => {
       height: 100,
       backgroundColor: wristbandColor,
     });
+    
+    // Add diecut lines
+    const diecutMargin = 20;
+    const topLine = new Line([diecutMargin, 10, 1200 - diecutMargin, 10], {
+      stroke: '#999999',
+      strokeWidth: 1,
+      strokeDashArray: [5, 5],
+      selectable: false,
+      evented: false,
+    });
+    const bottomLine = new Line([diecutMargin, 90, 1200 - diecutMargin, 90], {
+      stroke: '#999999',
+      strokeWidth: 1,
+      strokeDashArray: [5, 5],
+      selectable: false,
+      evented: false,
+    });
+    
+    canvas.add(topLine, bottomLine);
     setFabricCanvas(canvas);
+    
+    // Load saved templates
+    loadTemplates();
+    
     return () => {
       canvas.dispose();
     };
@@ -59,16 +115,53 @@ const DesignStudio = () => {
     }
   }, [wristbandColor, fabricCanvas]);
 
+  const loadTemplates = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+      
+      const { data, error } = await supabase
+        .from("designs")
+        .select("*")
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false });
+      
+      if (error) throw error;
+      setSavedTemplates(data || []);
+    } catch (error: any) {
+      console.error("Failed to load templates:", error);
+    }
+  };
+
   useEffect(() => {
     const fetchPricing = async () => {
       if (quantity < 1000) return;
       setLoadingPrice(true);
       try {
-        const { data, error } = await supabase.functions.invoke("get-pricing", {
-          body: { wristbandType, quantity, currency, printType, hasSecureGuests },
+        // Calculate pricing based on new structure
+        const basePrice = wristbandType === "tyvek" ? 0.50 : 1.00;
+        const extraCharges: any = {};
+        
+        if (printType === "print") {
+          extraCharges.print = 39 / quantity; // 39€ per 1000 bands
+        }
+        if (hasTrademark) {
+          extraCharges.trademark = 15 / quantity; // 15€ per 1000 bands
+        }
+        if (hasQrCode) {
+          extraCharges.qrCode = 15 / quantity; // 15€ per 1000 bands
+        }
+        
+        const unitPrice = basePrice + (extraCharges.print || 0) + (extraCharges.trademark || 0) + (extraCharges.qrCode || 0);
+        const totalPrice = unitPrice * quantity;
+        
+        setPricing({
+          basePrice,
+          extraCharges,
+          unitPrice,
+          totalPrice,
+          minQuantity: 1000,
         });
-        if (error) throw error;
-        setPricing(data);
       } catch (error: any) {
         toast.error(error.message || "Failed to calculate pricing");
       } finally {
@@ -76,7 +169,7 @@ const DesignStudio = () => {
       }
     };
     fetchPricing();
-  }, [wristbandType, quantity, currency, printType, hasSecureGuests]);
+  }, [wristbandType, quantity, printType, hasTrademark, hasQrCode]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -90,9 +183,17 @@ const DesignStudio = () => {
       const imgUrl = event.target?.result as string;
       FabricImage.fromURL(imgUrl, { crossOrigin: "anonymous" }).then((img) => {
         img.scaleToWidth(400);
+        // Add clipping to keep within diecut lines
         img.set({
           left: fabricCanvas.width! / 2 - img.getScaledWidth() / 2,
-          top: fabricCanvas.height! / 2 - img.getScaledHeight() / 2,
+          top: 50, // Center vertically within diecut area
+          clipPath: new Rect({
+            left: 20,
+            top: 10,
+            width: 1160,
+            height: 80,
+            absolutePositioned: true,
+          }),
         });
         if (uploadedImage) fabricCanvas.remove(uploadedImage);
         fabricCanvas.add(img);
@@ -112,15 +213,15 @@ const DesignStudio = () => {
 
     const text = new IText(customText, {
       left: fabricCanvas.width! / 2,
-      top: fabricCanvas.height! / 2,
+      top: 50,
       fontSize: 24,
-      fill: "#FFFFFF",
+      fill: "#000000",
       fontFamily: "Arial",
     });
 
     text.set({
       left: fabricCanvas.width! / 2 - text.width! / 2,
-      top: fabricCanvas.height! / 2 - text.height! / 2,
+      top: 50 - text.height! / 2,
     });
 
     fabricCanvas.add(text);
@@ -130,9 +231,76 @@ const DesignStudio = () => {
     toast.success("Text added to design");
   };
 
+  const handleSaveTemplate = async () => {
+    if (!fabricCanvas) return;
+    
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Please sign in to save templates");
+        navigate("/auth");
+        return;
+      }
+
+      const dataUrl = fabricCanvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
+      const blob = await (await fetch(dataUrl)).blob();
+      const fileName = `templates/${session.user.id}/${Date.now()}.png`;
+      const { error: uploadError } = await supabase.storage.from("wristband-designs").upload(fileName, blob);
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
+      const { error: designError } = await supabase.from("designs").insert({
+        user_id: session.user.id,
+        design_url: publicUrl,
+        wristband_color: wristbandColor,
+        wristband_type: wristbandType,
+        custom_text: customText,
+      });
+      if (designError) throw designError;
+
+      toast.success("Template saved successfully");
+      loadTemplates();
+    } catch (error: any) {
+      toast.error(error.message || "Failed to save template");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (id: string) => {
+    try {
+      const { error } = await supabase.from("designs").delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Template deleted");
+      loadTemplates();
+    } catch (error: any) {
+      toast.error("Failed to delete template");
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!fabricCanvas) return;
+    const dataUrl = fabricCanvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
+    const link = document.createElement("a");
+    link.href = dataUrl;
+    link.download = `wristband-design-${Date.now()}.png`;
+    link.click();
+    toast.success("Design downloaded");
+  };
+
+  const handlePrint = () => {
+    if (!fabricCanvas) return;
+    const dataUrl = fabricCanvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(`<img src="${dataUrl}" onload="window.print();window.close()" />`);
+    }
+  };
+
   const handlePlaceOrder = async () => {
-    if (!fabricCanvas || fabricCanvas.getObjects().length === 0) {
-      toast.error("Please upload your design first");
+    if (!fabricCanvas) {
+      toast.error("Please create a design");
       return;
     }
     if (quantity < 1000) {
@@ -177,9 +345,9 @@ const DesignStudio = () => {
         base_price: pricing.basePrice,
         currency,
         print_type: printType,
-        has_secure_guests: hasSecureGuests,
         extra_charges: pricing.extraCharges,
         status: "pending",
+        admin_notes: `Trademark: ${hasTrademark ? trademarkText : "No"}, QR Code: ${hasQrCode ? "Yes" : "No"}`,
       }).select().single();
       if (orderError) throw orderError;
 
@@ -195,7 +363,9 @@ const DesignStudio = () => {
             currency,
             wristband_type: wristbandType,
             print_type: printType,
-            has_secure_guests: hasSecureGuests,
+            has_trademark: hasTrademark,
+            trademark_text: trademarkText,
+            has_qr_code: hasQrCode,
           },
         },
       });
@@ -207,7 +377,7 @@ const DesignStudio = () => {
     }
   };
 
-  const currencySymbol = currency === "USD" ? "$" : currency === "EUR" ? "€" : "£";
+  const currencySymbol = "€";
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
@@ -226,8 +396,25 @@ const DesignStudio = () => {
       <main className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-2 gap-8">
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Design Preview</h2>
-            <p className="text-sm text-muted-foreground mb-4">Create your custom wristband design (0.5" height, customizable length)</p>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-xl font-semibold">Design Preview</h2>
+                <p className="text-sm text-muted-foreground">Create your custom wristband design (diecut lines shown)</p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={handleSaveTemplate} disabled={saving}>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Template
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleDownloadPDF}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+                <Button variant="outline" size="sm" onClick={handlePrint}>
+                  <Printer className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
             <div ref={canvasContainerRef} className="bg-muted rounded-lg p-8 flex items-center justify-center overflow-x-auto" style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.1)" }}>
               <div style={{ transform: "perspective(1000px) rotateX(-5deg)", transformStyle: "preserve-3d", boxShadow: "0 10px 30px rgba(0,0,0,0.3)", borderRadius: "4px" }}>
                 <canvas className="rounded" />
@@ -239,7 +426,8 @@ const DesignStudio = () => {
                 size="sm" 
                 onClick={() => {
                   if (fabricCanvas) {
-                    fabricCanvas.remove(...fabricCanvas.getObjects());
+                    const objects = fabricCanvas.getObjects().filter(obj => obj.selectable !== false);
+                    fabricCanvas.remove(...objects);
                     setUploadedImage(null);
                     toast.success("Canvas cleared");
                   }
@@ -263,6 +451,29 @@ const DesignStudio = () => {
                 Delete Selected
               </Button>
             </div>
+            
+            {savedTemplates.length > 0 && (
+              <div className="mt-6">
+                <h3 className="font-semibold mb-3">Saved Templates</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {savedTemplates.map((template) => (
+                    <div key={template.id} className="relative group border rounded-lg overflow-hidden">
+                      <img src={template.design_url} alt="Template" className="w-full h-20 object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeleteTemplate(template.id)}
+                          className="text-white hover:text-red-500"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
 
           <Card className="p-6">
@@ -270,18 +481,22 @@ const DesignStudio = () => {
             <div className="space-y-6">
               <div>
                 <Label>Quantity (Min 1000 pcs)</Label>
-                <Input type="number" min="1000" step="100" value={quantity} onChange={(e) => setQuantity(Math.max(1000, parseInt(e.target.value) || 1000))} className="mt-2" />
-              </div>
-              <div>
-                <Label>Currency</Label>
-                <Select value={currency} onValueChange={(v: Currency) => setCurrency(v)}>
-                  <SelectTrigger className="mt-2"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="USD">USD ($)</SelectItem>
-                    <SelectItem value="EUR">EUR (€)</SelectItem>
-                    <SelectItem value="GBP">GBP (£)</SelectItem>
-                  </SelectContent>
-                </Select>
+                <div className="flex gap-2 items-center mt-2">
+                  <Input type="number" min="1000" step="100" value={quantity} onChange={(e) => setQuantity(Math.max(1000, parseInt(e.target.value) || 1000))} />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setBands([...bands, { id: bands.length + 1 }])}
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Band
+                  </Button>
+                </div>
+                {bands.length > 1 && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {bands.length} bands × {quantity} pcs each = {bands.length * quantity} total
+                  </p>
+                )}
               </div>
               <div>
                 <Label>Wristband Type</Label>
@@ -295,31 +510,62 @@ const DesignStudio = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Wristband Color</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input type="color" value={wristbandColor} onChange={(e) => setWristbandColor(e.target.value)} className="w-20 h-10" />
-                  <Input type="text" value={wristbandColor} onChange={(e) => setWristbandColor(e.target.value)} className="flex-1" />
+              {wristbandType === "tyvek" && (
+                <div>
+                  <Label>Tyvek Color</Label>
+                  <div className="grid grid-cols-9 gap-2 mt-2">
+                    {TYVEK_COLORS.map((color) => (
+                      <button
+                        key={color.value}
+                        className={`w-10 h-10 rounded-full border-2 transition-all ${
+                          wristbandColor === color.value ? "border-primary scale-110" : "border-gray-300"
+                        }`}
+                        style={{ backgroundColor: color.value }}
+                        onClick={() => setWristbandColor(color.value)}
+                        title={color.name}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
+              
+              {wristbandType !== "tyvek" && (
+                <div>
+                  <Label>Wristband Color</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input type="color" value={wristbandColor} onChange={(e) => setWristbandColor(e.target.value)} className="w-20 h-10" />
+                    <Input type="text" value={wristbandColor} onChange={(e) => setWristbandColor(e.target.value)} className="flex-1" />
+                  </div>
+                </div>
+              )}
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="black-print" checked={printType === "black"} onCheckedChange={(c) => setPrintType(c ? "black" : "none")} />
-                  <Label htmlFor="black-print" className="cursor-pointer">Black Print {pricing?.extraCharges.blackPrint && `(+${currencySymbol}${pricing.extraCharges.blackPrint.toFixed(2)})`}</Label>
+                  <Checkbox id="print" checked={printType === "print"} onCheckedChange={(c) => setPrintType(c ? "print" : "none")} />
+                  <Label htmlFor="print" className="cursor-pointer">Add Print (39€ per 1000 bands)</Label>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="full-color" checked={printType === "full_color"} onCheckedChange={(c) => setPrintType(c ? "full_color" : "none")} />
-                  <Label htmlFor="full-color" className="cursor-pointer">Full Color Print {pricing?.extraCharges.fullColorPrint && `(+${currencySymbol}${pricing.extraCharges.fullColorPrint.toFixed(2)})`}</Label>
+                  <Checkbox id="trademark" checked={hasTrademark} onCheckedChange={(c) => setHasTrademark(c as boolean)} />
+                  <Label htmlFor="trademark" className="cursor-pointer">Add Trademark Text (15€ per 1000 bands)</Label>
                 </div>
+                {hasTrademark && (
+                  <Input
+                    type="text"
+                    maxLength={15}
+                    value={trademarkText}
+                    onChange={(e) => setTrademarkText(e.target.value)}
+                    placeholder="Web address (max 15 letters)"
+                    className="ml-6"
+                  />
+                )}
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="secure-guests" checked={hasSecureGuests} onCheckedChange={(c) => setHasSecureGuests(c as boolean)} />
-                  <Label htmlFor="secure-guests" className="cursor-pointer">Secure Guests {pricing?.extraCharges.secureGuests && `(+${currencySymbol}${pricing.extraCharges.secureGuests.toFixed(2)})`}</Label>
+                  <Checkbox id="qr-code" checked={hasQrCode} onCheckedChange={(c) => setHasQrCode(c as boolean)} />
+                  <Label htmlFor="qr-code" className="cursor-pointer">Add QR Code - Emergency (15€ per 1000 bands)</Label>
                 </div>
               </div>
               <div>
-                <Label>Upload Your Design</Label>
+                <Label>Upload Your Design (Optional)</Label>
                 <Input type="file" accept="image/*" onChange={handleImageUpload} className="mt-2" />
-                <p className="text-xs text-muted-foreground mt-1">Max 5MB. Drag and resize on canvas.</p>
+                <p className="text-xs text-muted-foreground mt-1">Max 5MB. Will be cropped within diecut lines.</p>
               </div>
               <div>
                 <Label>Add Custom Text</Label>
@@ -342,20 +588,20 @@ const DesignStudio = () => {
                 {loadingPrice ? <div className="flex items-center justify-center py-4"><Loader2 className="h-6 w-6 animate-spin" /></div> : pricing ? (
                   <>
                     <div className="flex justify-between text-sm"><span>Base Price:</span><span>{currencySymbol}{pricing.basePrice.toFixed(2)} / unit</span></div>
-                    {pricing.extraCharges.blackPrint && <div className="flex justify-between text-sm"><span>Black Print:</span><span>+{currencySymbol}{pricing.extraCharges.blackPrint.toFixed(2)} / unit</span></div>}
-                    {pricing.extraCharges.fullColorPrint && <div className="flex justify-between text-sm"><span>Full Color Print:</span><span>+{currencySymbol}{pricing.extraCharges.fullColorPrint.toFixed(2)} / unit</span></div>}
-                    {pricing.extraCharges.secureGuests && <div className="flex justify-between text-sm"><span>Secure Guests:</span><span>+{currencySymbol}{pricing.extraCharges.secureGuests.toFixed(2)} / unit</span></div>}
+                    {pricing.extraCharges.print && <div className="flex justify-between text-sm"><span>Print:</span><span>+{currencySymbol}{pricing.extraCharges.print.toFixed(2)} / unit</span></div>}
+                    {pricing.extraCharges.trademark && <div className="flex justify-between text-sm"><span>Trademark Text:</span><span>+{currencySymbol}{pricing.extraCharges.trademark.toFixed(2)} / unit</span></div>}
+                    {pricing.extraCharges.qrCode && <div className="flex justify-between text-sm"><span>QR Code:</span><span>+{currencySymbol}{pricing.extraCharges.qrCode.toFixed(2)} / unit</span></div>}
                     <div className="border-t pt-2 mt-2">
                       <div className="flex justify-between font-medium"><span>Unit Price:</span><span>{currencySymbol}{pricing.unitPrice.toFixed(2)}</span></div>
-                      <div className="flex justify-between text-sm"><span>Quantity:</span><span>{quantity} pcs</span></div>
+                      <div className="flex justify-between text-sm"><span>Quantity:</span><span>{quantity} pcs{bands.length > 1 ? ` × ${bands.length} bands` : ""}</span></div>
                     </div>
-                    <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary"><span>Total:</span><span>{currencySymbol}{pricing.totalPrice.toFixed(2)}</span></div>
+                    <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary"><span>Total:</span><span>{currencySymbol}{(pricing.totalPrice * bands.length).toFixed(2)}</span></div>
                   </>
                 ) : <p className="text-sm text-muted-foreground text-center py-4">Enter quantity to see pricing</p>}
               </div>
-              <Button onClick={handlePlaceOrder} disabled={saving || !pricing || !fabricCanvas?.getObjects().length} variant="hero" className="w-full">
+              <Button onClick={handlePlaceOrder} disabled={saving || !pricing} variant="hero" className="w-full">
                 <ShoppingCart className="h-4 w-4 mr-2" />
-                {pricing ? `Continue to Summary ${currencySymbol}${pricing.totalPrice.toFixed(2)}` : "Continue"}
+                {pricing ? `Continue to Summary ${currencySymbol}${(pricing.totalPrice * bands.length).toFixed(2)}` : "Continue"}
               </Button>
             </div>
           </Card>
