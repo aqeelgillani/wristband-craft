@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { ArrowLeft, ShoppingCart, Loader2, Save, Download, Printer, Trash2, Plus } from "lucide-react";
 import { Canvas as FabricCanvas, Image as FabricImage, IText, Line, Rect } from "fabric";
@@ -66,11 +67,13 @@ const DesignStudio = () => {
   const [hasTrademark, setHasTrademark] = useState(false);
   const [hasQrCode, setHasQrCode] = useState(false);
   const [trademarkText, setTrademarkText] = useState("");
+  const [trademarkTextColor, setTrademarkTextColor] = useState<"white" | "black">("black");
   const [pricing, setPricing] = useState<PricingData | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
-  const [bands, setBands] = useState([{ id: 1 }]);
+  const [trademarkTextObj, setTrademarkTextObj] = useState<IText | null>(null);
+  const [qrPlaceholder, setQrPlaceholder] = useState<Rect | null>(null);
 
   useEffect(() => {
     if (!canvasContainerRef.current || fabricCanvas) return;
@@ -138,21 +141,18 @@ const DesignStudio = () => {
       if (quantity < 1000) return;
       setLoadingPrice(true);
       try {
-        // Calculate pricing based on new structure
-        const basePrice = wristbandType === "tyvek" ? 0.50 : 1.00;
+        // Base price is 39€ for 1000pcs regardless of print
+        const basePrice = 0.039; // 39€ / 1000 = 0.039€ per unit
         const extraCharges: any = {};
         
-        if (printType === "print") {
-          extraCharges.print = 39 / quantity; // 39€ per 1000 bands
-        }
         if (hasTrademark) {
-          extraCharges.trademark = 15 / quantity; // 15€ per 1000 bands
+          extraCharges.trademark = 15 / 1000; // 15€ per 1000 bands
         }
         if (hasQrCode) {
-          extraCharges.qrCode = 15 / quantity; // 15€ per 1000 bands
+          extraCharges.qrCode = 15 / 1000; // 15€ per 1000 bands
         }
         
-        const unitPrice = basePrice + (extraCharges.print || 0) + (extraCharges.trademark || 0) + (extraCharges.qrCode || 0);
+        const unitPrice = basePrice + (extraCharges.trademark || 0) + (extraCharges.qrCode || 0);
         const totalPrice = unitPrice * quantity;
         
         setPricing({
@@ -170,6 +170,75 @@ const DesignStudio = () => {
     };
     fetchPricing();
   }, [wristbandType, quantity, printType, hasTrademark, hasQrCode]);
+
+  // Update trademark text on canvas
+  useEffect(() => {
+    if (!fabricCanvas) return;
+    
+    // Remove existing trademark text
+    if (trademarkTextObj) {
+      fabricCanvas.remove(trademarkTextObj);
+      setTrademarkTextObj(null);
+    }
+    
+    // Add new trademark text if enabled
+    if (hasTrademark && trademarkText.trim()) {
+      const text = new IText(trademarkText, {
+        left: 1150,
+        top: 50,
+        fontSize: 10,
+        fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
+        fontFamily: "Arial",
+        angle: 90, // Vertical text
+      });
+      
+      fabricCanvas.add(text);
+      setTrademarkTextObj(text);
+      fabricCanvas.renderAll();
+    }
+  }, [hasTrademark, trademarkText, trademarkTextColor, fabricCanvas]);
+
+  // Update QR placeholder on canvas
+  useEffect(() => {
+    if (!fabricCanvas) return;
+    
+    // Remove existing QR placeholder
+    if (qrPlaceholder) {
+      fabricCanvas.remove(qrPlaceholder);
+      setQrPlaceholder(null);
+    }
+    
+    // Add QR placeholder if enabled
+    if (hasQrCode) {
+      const qrSize = 70;
+      const qrRect = new Rect({
+        left: 30,
+        top: 15,
+        width: qrSize,
+        height: qrSize,
+        fill: "#FFFFFF",
+        stroke: "#000000",
+        strokeWidth: 1,
+        selectable: false,
+        evented: false,
+      });
+      
+      // Add "QR" text inside
+      const qrText = new IText("QR", {
+        left: 50,
+        top: 40,
+        fontSize: 16,
+        fill: "#000000",
+        fontFamily: "Arial",
+        selectable: false,
+        evented: false,
+      });
+      
+      fabricCanvas.add(qrRect, qrText);
+      setQrPlaceholder(qrRect);
+      fabricCanvas.renderAll();
+    }
+  }, [hasQrCode, fabricCanvas]);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -457,13 +526,39 @@ const DesignStudio = () => {
                 <h3 className="font-semibold mb-3">Saved Templates</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {savedTemplates.map((template) => (
-                    <div key={template.id} className="relative group border rounded-lg overflow-hidden">
+                    <div 
+                      key={template.id} 
+                      className="relative group border rounded-lg overflow-hidden cursor-pointer"
+                      onClick={() => {
+                        // Load template into canvas
+                        if (!fabricCanvas) return;
+                        FabricImage.fromURL(template.design_url, { crossOrigin: "anonymous" }).then((img) => {
+                          // Clear canvas first
+                          const objects = fabricCanvas.getObjects().filter(obj => obj.selectable !== false);
+                          fabricCanvas.remove(...objects);
+                          setUploadedImage(null);
+                          
+                          // Add template image
+                          img.scaleToWidth(fabricCanvas.width!);
+                          fabricCanvas.add(img);
+                          fabricCanvas.renderAll();
+                          
+                          // Update settings
+                          setWristbandColor(template.wristband_color);
+                          setWristbandType(template.wristband_type as WristbandType);
+                          toast.success("Template loaded");
+                        });
+                      }}
+                    >
                       <img src={template.design_url} alt="Template" className="w-full h-20 object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleDeleteTemplate(template.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTemplate(template.id);
+                          }}
                           className="text-white hover:text-red-500"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -481,22 +576,20 @@ const DesignStudio = () => {
             <div className="space-y-6">
               <div>
                 <Label>Quantity (Min 1000 pcs)</Label>
-                <div className="flex gap-2 items-center mt-2">
-                  <Input type="number" min="1000" step="100" value={quantity} onChange={(e) => setQuantity(Math.max(1000, parseInt(e.target.value) || 1000))} />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setBands([...bands, { id: bands.length + 1 }])}
-                  >
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Band
-                  </Button>
-                </div>
-                {bands.length > 1 && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {bands.length} bands × {quantity} pcs each = {bands.length * quantity} total
-                  </p>
-                )}
+                <Input type="number" min="1000" step="100" value={quantity} onChange={(e) => setQuantity(Math.max(1000, parseInt(e.target.value) || 1000))} className="mt-2" />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    navigate("/design-studio");
+                    window.scrollTo(0, 0);
+                    toast.success("Create your new design");
+                  }}
+                  className="w-full mt-2"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add New Design
+                </Button>
               </div>
               <div>
                 <Label>Wristband Type</Label>
@@ -541,22 +634,38 @@ const DesignStudio = () => {
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
                   <Checkbox id="print" checked={printType === "print"} onCheckedChange={(c) => setPrintType(c ? "print" : "none")} />
-                  <Label htmlFor="print" className="cursor-pointer">Add Print (39€ per 1000 bands)</Label>
+                  <Label htmlFor="print" className="cursor-pointer">Add Print (included in base price)</Label>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="trademark" checked={hasTrademark} onCheckedChange={(c) => setHasTrademark(c as boolean)} />
-                  <Label htmlFor="trademark" className="cursor-pointer">Add Trademark Text (15€ per 1000 bands)</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <Checkbox id="trademark" checked={hasTrademark} onCheckedChange={(c) => setHasTrademark(c as boolean)} />
+                    <Label htmlFor="trademark" className="cursor-pointer">Add Trademark Text (15€ per 1000 bands)</Label>
+                  </div>
+                  {hasTrademark && (
+                    <div className="ml-6 space-y-2">
+                      <Input
+                        type="text"
+                        maxLength={15}
+                        value={trademarkText}
+                        onChange={(e) => setTrademarkText(e.target.value)}
+                        placeholder="Web address (max 15 letters)"
+                      />
+                      <div className="flex items-center gap-4">
+                        <Label>Text Color:</Label>
+                        <RadioGroup value={trademarkTextColor} onValueChange={(v) => setTrademarkTextColor(v as "white" | "black")} className="flex gap-4">
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="white" id="white" />
+                            <Label htmlFor="white" className="cursor-pointer">White</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <RadioGroupItem value="black" id="black" />
+                            <Label htmlFor="black" className="cursor-pointer">Black</Label>
+                          </div>
+                        </RadioGroup>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                {hasTrademark && (
-                  <Input
-                    type="text"
-                    maxLength={15}
-                    value={trademarkText}
-                    onChange={(e) => setTrademarkText(e.target.value)}
-                    placeholder="Web address (max 15 letters)"
-                    className="ml-6"
-                  />
-                )}
                 <div className="flex items-center space-x-2">
                   <Checkbox id="qr-code" checked={hasQrCode} onCheckedChange={(c) => setHasQrCode(c as boolean)} />
                   <Label htmlFor="qr-code" className="cursor-pointer">Add QR Code - Emergency (15€ per 1000 bands)</Label>
@@ -587,21 +696,20 @@ const DesignStudio = () => {
                 <h3 className="font-semibold text-lg mb-3">Order Summary</h3>
                 {loadingPrice ? <div className="flex items-center justify-center py-4"><Loader2 className="h-6 w-6 animate-spin" /></div> : pricing ? (
                   <>
-                    <div className="flex justify-between text-sm"><span>Base Price:</span><span>{currencySymbol}{pricing.basePrice.toFixed(2)} / unit</span></div>
-                    {pricing.extraCharges.print && <div className="flex justify-between text-sm"><span>Print:</span><span>+{currencySymbol}{pricing.extraCharges.print.toFixed(2)} / unit</span></div>}
-                    {pricing.extraCharges.trademark && <div className="flex justify-between text-sm"><span>Trademark Text:</span><span>+{currencySymbol}{pricing.extraCharges.trademark.toFixed(2)} / unit</span></div>}
-                    {pricing.extraCharges.qrCode && <div className="flex justify-between text-sm"><span>QR Code:</span><span>+{currencySymbol}{pricing.extraCharges.qrCode.toFixed(2)} / unit</span></div>}
+                    <div className="flex justify-between text-sm"><span>Base Price (with/without print):</span><span>{currencySymbol}39.00 / 1000 pcs</span></div>
+                    {pricing.extraCharges.trademark && <div className="flex justify-between text-sm"><span>Trademark Text:</span><span>+{currencySymbol}15.00 / 1000 pcs</span></div>}
+                    {pricing.extraCharges.qrCode && <div className="flex justify-between text-sm"><span>QR Code:</span><span>+{currencySymbol}15.00 / 1000 pcs</span></div>}
                     <div className="border-t pt-2 mt-2">
-                      <div className="flex justify-between font-medium"><span>Unit Price:</span><span>{currencySymbol}{pricing.unitPrice.toFixed(2)}</span></div>
-                      <div className="flex justify-between text-sm"><span>Quantity:</span><span>{quantity} pcs{bands.length > 1 ? ` × ${bands.length} bands` : ""}</span></div>
+                      <div className="flex justify-between font-medium"><span>Unit Price:</span><span>{currencySymbol}{pricing.unitPrice.toFixed(3)}</span></div>
+                      <div className="flex justify-between text-sm"><span>Quantity:</span><span>{quantity} pcs</span></div>
                     </div>
-                    <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary"><span>Total:</span><span>{currencySymbol}{(pricing.totalPrice * bands.length).toFixed(2)}</span></div>
+                    <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary"><span>Total:</span><span>{currencySymbol}{pricing.totalPrice.toFixed(2)}</span></div>
                   </>
                 ) : <p className="text-sm text-muted-foreground text-center py-4">Enter quantity to see pricing</p>}
               </div>
               <Button onClick={handlePlaceOrder} disabled={saving || !pricing} variant="hero" className="w-full">
                 <ShoppingCart className="h-4 w-4 mr-2" />
-                {pricing ? `Continue to Summary ${currencySymbol}${(pricing.totalPrice * bands.length).toFixed(2)}` : "Continue"}
+                {pricing ? `Continue to Summary ${currencySymbol}${pricing.totalPrice.toFixed(2)}` : "Continue"}
               </Button>
             </div>
           </Card>
