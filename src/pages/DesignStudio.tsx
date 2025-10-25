@@ -195,7 +195,7 @@ const DesignStudio = () => {
     fetchPricing();
   }, [wristbandType, quantity, printType, hasTrademark, hasQrCode]);
 
-  // Update trademark text on canvas (centered vertically on right side)
+  // Update trademark text on canvas (centered horizontally on wristband)
   useEffect(() => {
     if (!fabricCanvas) return;
     
@@ -208,12 +208,12 @@ const DesignStudio = () => {
     // Add new trademark text if enabled
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 1160,
+        left: 630, // Center of design area: 90 + (1080 / 2)
         top: 50,
-        fontSize: 10,
+        fontSize: 20,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
         fontFamily: "Arial",
-        angle: 90, // Vertical text
+        fontWeight: 'bold',
         originX: 'center',
         originY: 'center',
       });
@@ -282,8 +282,8 @@ const DesignStudio = () => {
       const imgUrl = event.target?.result as string;
       FabricImage.fromURL(imgUrl, { crossOrigin: "anonymous" }).then((img) => {
         // Scale to fit within the design area (between diecut lines)
-        const maxWidth = 1080 - 90; // 1170 (right margin) - 90 (left margin after QR)
-        const maxHeight = 80; // 90 (bottom) - 10 (top)
+        const maxWidth = 300; // Reasonable size for logos
+        const maxHeight = 60; // Fits within diecut lines (80px - margins)
         
         if (img.width! > maxWidth) {
           img.scaleToWidth(maxWidth);
@@ -292,10 +292,10 @@ const DesignStudio = () => {
           img.scaleToHeight(maxHeight);
         }
         
-        // Center in the design area (between QR and right margin, within diecut lines)
+        // Position in the design area with proper clipping
         img.set({
-          left: 90 + (1080 / 2) - (img.getScaledWidth() / 2),
-          top: 50 - (img.getScaledHeight() / 2),
+          left: 630 - (img.getScaledWidth() / 2), // Center horizontally
+          top: 50 - (img.getScaledHeight() / 2), // Center vertically
           clipPath: new Rect({
             left: 90,
             top: 10,
@@ -305,12 +305,11 @@ const DesignStudio = () => {
           }),
         });
         
-        if (uploadedImage) fabricCanvas.remove(uploadedImage);
         fabricCanvas.add(img);
         setUploadedImage(img);
         fabricCanvas.setActiveObject(img);
         fabricCanvas.renderAll();
-        toast.success("Logo uploaded! Drag to reposition, right-click to copy");
+        toast.success("Logo uploaded! Select and click 'Duplicate Logo' to add more");
       });
     };
     reader.readAsDataURL(file);
@@ -339,38 +338,38 @@ const DesignStudio = () => {
     toast.success("Text added to design");
   };
 
-  // Add copy functionality for canvas objects
-  useEffect(() => {
+  const handleDuplicateLogo = () => {
     if (!fabricCanvas) return;
     
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
-        const activeObject = fabricCanvas.getActiveObject();
-        if (activeObject && activeObject.type === 'image') {
-          const img = activeObject as FabricImage;
-          const imgElement = img.getElement() as HTMLImageElement;
-          
-          FabricImage.fromURL(imgElement.src, { crossOrigin: "anonymous" }).then((cloned) => {
-            cloned.set({
-              left: img.left! + 20,
-              top: img.top! + 20,
-              scaleX: img.scaleX,
-              scaleY: img.scaleY,
-              angle: img.angle,
-              clipPath: img.clipPath,
-            });
-            fabricCanvas.add(cloned);
-            fabricCanvas.setActiveObject(cloned);
-            fabricCanvas.renderAll();
-            toast.success("Logo copied! Drag to reposition");
-          });
-        }
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [fabricCanvas]);
+    const activeObject = fabricCanvas.getActiveObject();
+    if (activeObject && activeObject.type === 'image') {
+      const img = activeObject as FabricImage;
+      const imgElement = img.getElement() as HTMLImageElement;
+      
+      FabricImage.fromURL(imgElement.src, { crossOrigin: "anonymous" }).then((cloned) => {
+        cloned.set({
+          left: img.left! + 30,
+          top: img.top! + 30,
+          scaleX: img.scaleX,
+          scaleY: img.scaleY,
+          angle: img.angle,
+          clipPath: new Rect({
+            left: 90,
+            top: 10,
+            width: 1080,
+            height: 80,
+            absolutePositioned: true,
+          }),
+        });
+        fabricCanvas.add(cloned);
+        fabricCanvas.setActiveObject(cloned);
+        fabricCanvas.renderAll();
+        toast.success("Logo duplicated! Drag to reposition");
+      });
+    } else {
+      toast.error("Select a logo to duplicate");
+    }
+  };
 
   const handleSaveTemplate = async () => {
     if (!fabricCanvas) return;
@@ -378,7 +377,7 @@ const DesignStudio = () => {
     setSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      if (!session?.user) {
         toast.error("Please sign in to save templates");
         navigate("/auth");
         return;
@@ -392,25 +391,23 @@ const DesignStudio = () => {
 
       const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
       
-      // Verify user is authenticated before inserting
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("Please sign in to save templates");
-        navigate("/auth");
-        return;
-      }
-      
       const { error: designError } = await supabase.from("designs").insert({
-        user_id: user.id,
+        user_id: session.user.id,
         design_url: publicUrl,
         wristband_color: wristbandColor,
         wristband_type: wristbandType,
+        custom_text: trademarkText || "",
+        text_color: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
       });
-      if (designError) throw designError;
+      if (designError) {
+        console.error("Design insert error:", designError);
+        throw designError;
+      }
 
       toast.success("Template saved successfully");
       loadTemplates();
     } catch (error: any) {
+      console.error("Save template error:", error);
       toast.error(error.message || "Failed to save template");
     } finally {
       setSaving(false);
@@ -569,7 +566,15 @@ const DesignStudio = () => {
                 <canvas className="rounded" />
               </div>
             </div>
-            <div className="mt-4 flex gap-2">
+            <div className="mt-4 flex gap-2 flex-wrap">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleDuplicateLogo}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Duplicate Logo
+              </Button>
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -758,7 +763,7 @@ const DesignStudio = () => {
               <div>
                 <Label>Upload Your Design (Optional)</Label>
                 <Input type="file" accept="image/*" onChange={handleImageUpload} className="mt-2" />
-                <p className="text-xs text-muted-foreground mt-1">Max 5MB. Will be cropped and centered within diecut lines. Press Ctrl+C to copy the logo.</p>
+                <p className="text-xs text-muted-foreground mt-1">Max 5MB. Logo will be centered and cropped within diecut lines. Select logo and click 'Duplicate Logo' to add more.</p>
               </div>
               <div>
                 <Label>Add Custom Text</Label>
