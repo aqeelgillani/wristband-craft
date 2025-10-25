@@ -83,16 +83,38 @@ const DesignStudio = () => {
       backgroundColor: wristbandColor,
     });
     
-    // Add diecut lines
-    const diecutMargin = 20;
-    const topLine = new Line([diecutMargin, 10, 1200 - diecutMargin, 10], {
+    // Add left white space for QR (70px wide)
+    const qrWhiteSpace = new Rect({
+      left: 0,
+      top: 0,
+      width: 80,
+      height: 100,
+      fill: '#FFFFFF',
+      selectable: false,
+      evented: false,
+    });
+    
+    // Add right white space for diecut (30px wide)
+    const diecutWhiteSpace = new Rect({
+      left: 1170,
+      top: 0,
+      width: 30,
+      height: 100,
+      fill: '#FFFFFF',
+      selectable: false,
+      evented: false,
+    });
+    
+    // Add diecut lines (in the middle design area)
+    const diecutMargin = 90;
+    const topLine = new Line([diecutMargin, 10, 1170, 10], {
       stroke: '#999999',
       strokeWidth: 1,
       strokeDashArray: [5, 5],
       selectable: false,
       evented: false,
     });
-    const bottomLine = new Line([diecutMargin, 90, 1200 - diecutMargin, 90], {
+    const bottomLine = new Line([diecutMargin, 90, 1170, 90], {
       stroke: '#999999',
       strokeWidth: 1,
       strokeDashArray: [5, 5],
@@ -100,7 +122,9 @@ const DesignStudio = () => {
       evented: false,
     });
     
-    canvas.add(topLine, bottomLine);
+    canvas.add(qrWhiteSpace, diecutWhiteSpace, topLine, bottomLine);
+    canvas.sendObjectToBack(diecutWhiteSpace);
+    canvas.sendObjectToBack(qrWhiteSpace);
     setFabricCanvas(canvas);
     
     // Load saved templates
@@ -171,7 +195,7 @@ const DesignStudio = () => {
     fetchPricing();
   }, [wristbandType, quantity, printType, hasTrademark, hasQrCode]);
 
-  // Update trademark text on canvas
+  // Update trademark text on canvas (centered vertically on right side)
   useEffect(() => {
     if (!fabricCanvas) return;
     
@@ -184,12 +208,14 @@ const DesignStudio = () => {
     // Add new trademark text if enabled
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 1150,
+        left: 1160,
         top: 50,
         fontSize: 10,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
         fontFamily: "Arial",
         angle: 90, // Vertical text
+        originX: 'center',
+        originY: 'center',
       });
       
       fabricCanvas.add(text);
@@ -198,7 +224,7 @@ const DesignStudio = () => {
     }
   }, [hasTrademark, trademarkText, trademarkTextColor, fabricCanvas]);
 
-  // Update QR placeholder on canvas
+  // Update QR placeholder on canvas (fills the left white area vertically)
   useEffect(() => {
     if (!fabricCanvas) return;
     
@@ -210,31 +236,35 @@ const DesignStudio = () => {
     
     // Add QR placeholder if enabled
     if (hasQrCode) {
-      const qrSize = 70;
       const qrRect = new Rect({
-        left: 30,
+        left: 5,
         top: 15,
-        width: qrSize,
-        height: qrSize,
+        width: 70,
+        height: 70,
         fill: "#FFFFFF",
         stroke: "#000000",
-        strokeWidth: 1,
+        strokeWidth: 2,
         selectable: false,
         evented: false,
       });
       
       // Add "QR" text inside
       const qrText = new IText("QR", {
-        left: 50,
-        top: 40,
-        fontSize: 16,
+        left: 40,
+        top: 50,
+        fontSize: 14,
         fill: "#000000",
         fontFamily: "Arial",
+        fontWeight: "bold",
+        originX: 'center',
+        originY: 'center',
         selectable: false,
         evented: false,
       });
       
       fabricCanvas.add(qrRect, qrText);
+      fabricCanvas.bringObjectToFront(qrRect);
+      fabricCanvas.bringObjectToFront(qrText);
       setQrPlaceholder(qrRect);
       fabricCanvas.renderAll();
     }
@@ -251,24 +281,36 @@ const DesignStudio = () => {
     reader.onload = async (event) => {
       const imgUrl = event.target?.result as string;
       FabricImage.fromURL(imgUrl, { crossOrigin: "anonymous" }).then((img) => {
-        img.scaleToWidth(400);
-        // Add clipping to keep within diecut lines
+        // Scale to fit within the design area (between diecut lines)
+        const maxWidth = 1080 - 90; // 1170 (right margin) - 90 (left margin after QR)
+        const maxHeight = 80; // 90 (bottom) - 10 (top)
+        
+        if (img.width! > maxWidth) {
+          img.scaleToWidth(maxWidth);
+        }
+        if (img.getScaledHeight() > maxHeight) {
+          img.scaleToHeight(maxHeight);
+        }
+        
+        // Center in the design area (between QR and right margin, within diecut lines)
         img.set({
-          left: fabricCanvas.width! / 2 - img.getScaledWidth() / 2,
-          top: 50, // Center vertically within diecut area
+          left: 90 + (1080 / 2) - (img.getScaledWidth() / 2),
+          top: 50 - (img.getScaledHeight() / 2),
           clipPath: new Rect({
-            left: 20,
+            left: 90,
             top: 10,
-            width: 1160,
+            width: 1080,
             height: 80,
             absolutePositioned: true,
           }),
         });
+        
         if (uploadedImage) fabricCanvas.remove(uploadedImage);
         fabricCanvas.add(img);
         setUploadedImage(img);
+        fabricCanvas.setActiveObject(img);
         fabricCanvas.renderAll();
-        toast.success("Design uploaded successfully");
+        toast.success("Logo uploaded! Drag to reposition, right-click to copy");
       });
     };
     reader.readAsDataURL(file);
@@ -281,16 +323,13 @@ const DesignStudio = () => {
     }
 
     const text = new IText(customText, {
-      left: fabricCanvas.width! / 2,
+      left: 630, // Center of design area: 90 + (1080 / 2)
       top: 50,
       fontSize: 24,
       fill: "#000000",
       fontFamily: "Arial",
-    });
-
-    text.set({
-      left: fabricCanvas.width! / 2 - text.width! / 2,
-      top: 50 - text.height! / 2,
+      originX: 'center',
+      originY: 'center',
     });
 
     fabricCanvas.add(text);
@@ -299,6 +338,39 @@ const DesignStudio = () => {
     setCustomText("");
     toast.success("Text added to design");
   };
+
+  // Add copy functionality for canvas objects
+  useEffect(() => {
+    if (!fabricCanvas) return;
+    
+    const handleKeyDown = async (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        const activeObject = fabricCanvas.getActiveObject();
+        if (activeObject && activeObject.type === 'image') {
+          const img = activeObject as FabricImage;
+          const imgElement = img.getElement() as HTMLImageElement;
+          
+          FabricImage.fromURL(imgElement.src, { crossOrigin: "anonymous" }).then((cloned) => {
+            cloned.set({
+              left: img.left! + 20,
+              top: img.top! + 20,
+              scaleX: img.scaleX,
+              scaleY: img.scaleY,
+              angle: img.angle,
+              clipPath: img.clipPath,
+            });
+            fabricCanvas.add(cloned);
+            fabricCanvas.setActiveObject(cloned);
+            fabricCanvas.renderAll();
+            toast.success("Logo copied! Drag to reposition");
+          });
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [fabricCanvas]);
 
   const handleSaveTemplate = async () => {
     if (!fabricCanvas) return;
@@ -319,12 +391,20 @@ const DesignStudio = () => {
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
+      
+      // Verify user is authenticated before inserting
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Please sign in to save templates");
+        navigate("/auth");
+        return;
+      }
+      
       const { error: designError } = await supabase.from("designs").insert({
-        user_id: session.user.id,
+        user_id: user.id,
         design_url: publicUrl,
         wristband_color: wristbandColor,
         wristband_type: wristbandType,
-        custom_text: customText,
       });
       if (designError) throw designError;
 
@@ -581,15 +661,19 @@ const DesignStudio = () => {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    navigate("/design-studio");
-                    window.scrollTo(0, 0);
-                    toast.success("Create your new design");
+                    // Save current design and open new one
+                    const confirmNew = window.confirm("Create a new design with different quantity or print options? Current design will be saved if you proceed to checkout.");
+                    if (confirmNew) {
+                      window.open("/design-studio", "_blank");
+                      toast.success("New design tab opened");
+                    }
                   }}
                   className="w-full mt-2"
                 >
                   <Plus className="h-4 w-4 mr-2" />
-                  Add New Design
+                  Add New Design (Different Quantity/Prints)
                 </Button>
+                <p className="text-xs text-muted-foreground mt-1">Use this when you need different quantities or print options for a new design</p>
               </div>
               <div>
                 <Label>Wristband Type</Label>
@@ -674,7 +758,7 @@ const DesignStudio = () => {
               <div>
                 <Label>Upload Your Design (Optional)</Label>
                 <Input type="file" accept="image/*" onChange={handleImageUpload} className="mt-2" />
-                <p className="text-xs text-muted-foreground mt-1">Max 5MB. Will be cropped within diecut lines.</p>
+                <p className="text-xs text-muted-foreground mt-1">Max 5MB. Will be cropped and centered within diecut lines. Press Ctrl+C to copy the logo.</p>
               </div>
               <div>
                 <Label>Add Custom Text</Label>
@@ -690,7 +774,7 @@ const DesignStudio = () => {
                     Add Text
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Click text on canvas to edit, drag to position.</p>
+                <p className="text-xs text-muted-foreground mt-1">Click text on canvas to edit, drag to position. Select object and press Delete to remove.</p>
               </div>
               <div className="bg-secondary/20 p-4 rounded-lg space-y-2">
                 <h3 className="font-semibold text-lg mb-3">Order Summary</h3>
