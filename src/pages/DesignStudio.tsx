@@ -83,22 +83,24 @@ const DesignStudio = () => {
       backgroundColor: wristbandColor,
     });
     
-    // Add left white space for QR (70px wide)
+    // Add left white space for QR (90px wide with rounded appearance)
     const qrWhiteSpace = new Rect({
       left: 0,
       top: 0,
-      width: 80,
+      width: 90,
       height: 100,
       fill: '#FFFFFF',
       selectable: false,
       evented: false,
+      rx: 10, // Rounded corner on left
+      ry: 10,
     });
     
-    // Add right white space for diecut (30px wide)
-    const diecutWhiteSpace = new Rect({
-      left: 1170,
+    // Add right white space for closing end (50px wide)
+    const closingWhiteSpace = new Rect({
+      left: 1150,
       top: 0,
-      width: 30,
+      width: 50,
       height: 100,
       fill: '#FFFFFF',
       selectable: false,
@@ -106,24 +108,24 @@ const DesignStudio = () => {
     });
     
     // Add diecut lines (in the middle design area)
-    const diecutMargin = 90;
-    const topLine = new Line([diecutMargin, 10, 1170, 10], {
-      stroke: '#999999',
+    const diecutMargin = 100;
+    const topLine = new Line([diecutMargin, 8, 1150, 8], {
+      stroke: '#666666',
       strokeWidth: 1,
       strokeDashArray: [5, 5],
       selectable: false,
       evented: false,
     });
-    const bottomLine = new Line([diecutMargin, 90, 1170, 90], {
-      stroke: '#999999',
+    const bottomLine = new Line([diecutMargin, 92, 1150, 92], {
+      stroke: '#666666',
       strokeWidth: 1,
       strokeDashArray: [5, 5],
       selectable: false,
       evented: false,
     });
     
-    canvas.add(qrWhiteSpace, diecutWhiteSpace, topLine, bottomLine);
-    canvas.sendObjectToBack(diecutWhiteSpace);
+    canvas.add(qrWhiteSpace, closingWhiteSpace, topLine, bottomLine);
+    canvas.sendObjectToBack(closingWhiteSpace);
     canvas.sendObjectToBack(qrWhiteSpace);
     setFabricCanvas(canvas);
     
@@ -195,7 +197,7 @@ const DesignStudio = () => {
     fetchPricing();
   }, [wristbandType, quantity, printType, hasTrademark, hasQrCode]);
 
-  // Update trademark text on canvas (centered horizontally on wristband)
+  // Update trademark text on canvas (vertical and rotatable)
   useEffect(() => {
     if (!fabricCanvas) return;
     
@@ -205,17 +207,19 @@ const DesignStudio = () => {
       setTrademarkTextObj(null);
     }
     
-    // Add new trademark text if enabled
+    // Add new trademark text if enabled (vertical and rotatable)
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
         left: 630, // Center of design area: 90 + (1080 / 2)
         top: 50,
-        fontSize: 20,
+        fontSize: 18,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
         fontFamily: "Arial",
         fontWeight: 'bold',
         originX: 'center',
         originY: 'center',
+        angle: 90, // Rotate 90 degrees for vertical text
+        lockRotation: false, // Allow rotation
       });
       
       fabricCanvas.add(text);
@@ -234,26 +238,28 @@ const DesignStudio = () => {
       setQrPlaceholder(null);
     }
     
-    // Add QR placeholder if enabled
+    // Add QR placeholder if enabled (in the white left area)
     if (hasQrCode) {
       const qrRect = new Rect({
-        left: 5,
+        left: 10,
         top: 15,
         width: 70,
         height: 70,
         fill: "#FFFFFF",
-        stroke: "#000000",
-        strokeWidth: 2,
+        stroke: "#00AA00",
+        strokeWidth: 3,
         selectable: false,
         evented: false,
+        rx: 5,
+        ry: 5,
       });
       
       // Add "QR" text inside
       const qrText = new IText("QR", {
-        left: 40,
+        left: 45,
         top: 50,
-        fontSize: 14,
-        fill: "#000000",
+        fontSize: 16,
+        fill: "#00AA00",
         fontFamily: "Arial",
         fontWeight: "bold",
         originX: 'center',
@@ -283,7 +289,7 @@ const DesignStudio = () => {
       FabricImage.fromURL(imgUrl, { crossOrigin: "anonymous" }).then((img) => {
         // Scale to fit within the design area (between diecut lines)
         const maxWidth = 300; // Reasonable size for logos
-        const maxHeight = 60; // Fits within diecut lines (80px - margins)
+        const maxHeight = 60; // Fits within diecut lines (84px - margins)
         
         if (img.width! > maxWidth) {
           img.scaleToWidth(maxWidth);
@@ -294,13 +300,13 @@ const DesignStudio = () => {
         
         // Position in the design area with proper clipping
         img.set({
-          left: 630 - (img.getScaledWidth() / 2), // Center horizontally
+          left: 625 - (img.getScaledWidth() / 2), // Center horizontally in design area (100 + 1050/2)
           top: 50 - (img.getScaledHeight() / 2), // Center vertically
           clipPath: new Rect({
-            left: 90,
-            top: 10,
-            width: 1080,
-            height: 80,
+            left: 100,
+            top: 8,
+            width: 1050,
+            height: 84,
             absolutePositioned: true,
           }),
         });
@@ -322,7 +328,7 @@ const DesignStudio = () => {
     }
 
     const text = new IText(customText, {
-      left: 630, // Center of design area: 90 + (1080 / 2)
+      left: 625, // Center of design area: 100 + (1050 / 2)
       top: 50,
       fontSize: 24,
       fill: "#000000",
@@ -354,10 +360,10 @@ const DesignStudio = () => {
           scaleY: img.scaleY,
           angle: img.angle,
           clipPath: new Rect({
-            left: 90,
-            top: 10,
-            width: 1080,
-            height: 80,
+            left: 100,
+            top: 8,
+            width: 1050,
+            height: 84,
             absolutePositioned: true,
           }),
         });
@@ -545,7 +551,7 @@ const DesignStudio = () => {
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h2 className="text-xl font-semibold">Design Preview</h2>
-                <p className="text-sm text-muted-foreground">Create your custom wristband design (diecut lines shown)</p>
+                <p className="text-sm text-muted-foreground">Left white area: QR space | Middle: Design area | Right white: Closing end</p>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={handleSaveTemplate} disabled={saving}>
