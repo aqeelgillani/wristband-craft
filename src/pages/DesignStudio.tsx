@@ -65,6 +65,7 @@ const DesignStudio = () => {
   const [currency] = useState<Currency>("EUR");
   const [printType, setPrintType] = useState<PrintType>("none");
   const [hasTrademark, setHasTrademark] = useState(false);
+   const [hasPrint, setHasPrint] = useState(false);
   const [hasQrCode, setHasQrCode] = useState(false);
   const [trademarkText, setTrademarkText] = useState("");
   const [trademarkTextColor, setTrademarkTextColor] = useState<"white" | "black">("black");
@@ -174,11 +175,14 @@ const DesignStudio = () => {
         if (hasTrademark) {
           extraCharges.trademark = 15 / 1000; // 15€ per 1000 bands
         }
+     if (hasPrint) {
+          extraCharges.print = 39; // 15€ per 1000 bands
+        }
         if (hasQrCode) {
           extraCharges.qrCode = 15 / 1000; // 15€ per 1000 bands
         }
         
-        const unitPrice = basePrice + (extraCharges.trademark || 0) + (extraCharges.qrCode || 0);
+        const unitPrice = basePrice + (extraCharges.trademark || 0) + (extraCharges.qrCode || 0) + (extraCharges.print);
         const totalPrice = unitPrice * quantity;
         
         setPricing({
@@ -210,7 +214,7 @@ const DesignStudio = () => {
     // Add new trademark text if enabled (vertical and rotatable)
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 430, // Center of design area: 90 + (1080 / 2)
+        left: 630, // Center of design area: 90 + (1080 / 2)
         top: 50,
         fontSize: 18,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
