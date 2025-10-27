@@ -210,7 +210,7 @@ const DesignStudio = () => {
     // Add new trademark text if enabled (vertical and rotatable)
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 60, // Center of design area: 90 + (1080 / 2)
+        left: 430, // Center of design area: 90 + (1080 / 2)
         top: 50,
         fontSize: 18,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
@@ -300,7 +300,7 @@ const DesignStudio = () => {
         
         // Position in the design area with proper clipping
         img.set({
-          left: 62 - (img.getScaledWidth() / 2), // Center horizontally in design area (100 + 1050/2)
+          left: 625 - (img.getScaledWidth() / 2), // Center horizontally in design area (100 + 1050/2)
           top: 50 - (img.getScaledHeight() / 2), // Center vertically
           clipPath: new Rect({
             left: 100,
@@ -334,6 +334,7 @@ const DesignStudio = () => {
       fill: "#000000",
       fontFamily: "Arial",
       originX: 'center',
+      fontWeight: 'bold', 
       originY: 'center',
     });
 
@@ -567,7 +568,7 @@ const DesignStudio = () => {
                 </Button>
               </div>
             </div>
-            <div ref={canvasContainerRef} className="bg-muted rounded-lg p-8 flex items-center justify-center overflow-x-auto" style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.1)" }}>
+            <div ref={canvasContainerRef} className="bg-muted rounded-lg p-8 flex items-center justify-center " style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.1)" }}>
               <div style={{ transform: "perspective(1000px) rotateX(-5deg)", transformStyle: "preserve-3d", boxShadow: "0 10px 30px rgba(0,0,0,0.3)", borderRadius: "4px" }}>
                 <canvas className="rounded" />
               </div>
