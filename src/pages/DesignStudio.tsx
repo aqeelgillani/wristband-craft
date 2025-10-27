@@ -210,12 +210,12 @@ const DesignStudio = () => {
     // Add new trademark text if enabled (vertical and rotatable)
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 630, // Center of design area: 90 + (1080 / 2)
+        left: 60, // Center of design area: 90 + (1080 / 2)
         top: 50,
         fontSize: 18,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
         fontFamily: "Arial",
-        fontWeight: 'bold',
+        fontWeight: 'light',
         originX: 'center',
         originY: 'center',
         angle: 90, // Rotate 90 degrees for vertical text
@@ -300,7 +300,7 @@ const DesignStudio = () => {
         
         // Position in the design area with proper clipping
         img.set({
-          left: 625 - (img.getScaledWidth() / 2), // Center horizontally in design area (100 + 1050/2)
+          left: 62 - (img.getScaledWidth() / 2), // Center horizontally in design area (100 + 1050/2)
           top: 50 - (img.getScaledHeight() / 2), // Center vertically
           clipPath: new Rect({
             left: 100,
