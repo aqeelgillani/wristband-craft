@@ -163,43 +163,54 @@ const DesignStudio = () => {
     }
   };
 
+
   useEffect(() => {
-    const fetchPricing = async () => {
-      if (quantity < 1000) return;
-      setLoadingPrice(true);
-      try {
-        // Base price is 39€ for 1000pcs regardless of print
-        const basePrice = 0.039; // 39€ / 1000 = 0.039€ per unit
-        const extraCharges: any = {};
-        
-        if (hasTrademark) {
-          extraCharges.trademark = 15 / 1000; // 15€ per 1000 bands
-        }
-     if (hasPrint) {
-          extraCharges.print = 39; // 15€ per 1000 bands
-        }
-        if (hasQrCode) {
-          extraCharges.qrCode = 15 / 1000; // 15€ per 1000 bands
-        }
-        
-        const unitPrice = basePrice + (extraCharges.trademark || 0) + (extraCharges.qrCode || 0) + (extraCharges.print);
-        const totalPrice = unitPrice * quantity;
-        
-        setPricing({
-          basePrice,
-          extraCharges,
-          unitPrice,
-          totalPrice,
-          minQuantity: 1000,
-        });
-      } catch (error: any) {
-        toast.error(error.message || "Failed to calculate pricing");
-      } finally {
-        setLoadingPrice(false);
+  const fetchPricing = async () => {
+    if (quantity < 1000) return;
+    setLoadingPrice(true);
+    try {
+      // Base price is 39€ for 1000pcs regardless of print
+      const basePrice = 0.039; // €0.039 per unit (39€ / 1000)
+      const extraCharges: any = {};
+      
+      // Add optional extras
+      if (hasTrademark) {
+        extraCharges.trademark = 15; // €15 fixed per order
       }
-    };
-    fetchPricing();
-  }, [wristbandType, quantity, printType, hasTrademark, hasQrCode]);
+      if (hasPrint) {
+        extraCharges.print = 39; // €39 fixed per order (print charge)
+      }
+      if (hasQrCode) {
+        extraCharges.qrCode = 15; // €15 fixed per order
+      }
+
+      // Compute per-unit price (only includes base)
+      const unitPrice = basePrice;
+
+      // Total = base price * quantity + fixed extras
+      const totalExtras =
+        (extraCharges.trademark || 0) +
+        (extraCharges.print || 0) +
+        (extraCharges.qrCode || 0);
+
+      const totalPrice = unitPrice * quantity + totalExtras;
+
+      setPricing({
+        basePrice,
+        extraCharges,
+        unitPrice,
+        totalPrice,
+        minQuantity: 1000,
+      });
+    } catch (error: any) {
+      toast.error(error.message || "Failed to calculate pricing");
+    } finally {
+      setLoadingPrice(false);
+    }
+  };
+  fetchPricing();
+}, [wristbandType, quantity, printType, hasTrademark, hasPrint, hasQrCode]);
+
 
   // Update trademark text on canvas (vertical and rotatable)
   useEffect(() => {
