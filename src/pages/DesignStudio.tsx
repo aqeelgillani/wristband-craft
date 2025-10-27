@@ -170,11 +170,31 @@ useEffect(() => {
       const basePrice = 0.039; // €0.039 per unit (39€/1000)
       const extraCharges: Record<string, number> = {};
 
-      if (hasTrademark) extraCharges.trademark = 15;
-      if (hasPrint) extraCharges.print = 39;
-      if (hasQrCode) extraCharges.qrCode = 15;
 
-      const unitPrice = basePrice; // Only base is per-unit
+  useEffect(() => {
+  const fetchPricing = async () => {
+    if (quantity < 1000) return;
+    setLoadingPrice(true);
+    try {
+      // Base price is 39€ for 1000pcs regardless of print
+      const basePrice = 0.039; // €0.039 per unit (39€ / 1000)
+      const extraCharges: any = {};
+      
+      // Add optional extras
+      if (hasTrademark) {
+        extraCharges.trademark = 15; // €15 fixed per order
+      }
+      if (hasPrint) {
+        extraCharges.print = 39; // €39 fixed per order (print charge)
+      }
+      if (hasQrCode) {
+        extraCharges.qrCode = 15; // €15 fixed per order
+      }
+
+      // Compute per-unit price (only includes base)
+      const unitPrice = basePrice;
+
+      // Total = base price * quantity + fixed extras
       const totalExtras =
         (extraCharges.trademark || 0) +
         (extraCharges.print || 0) +
