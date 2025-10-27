@@ -568,7 +568,7 @@ const DesignStudio = () => {
                 </Button>
               </div>
             </div>
-            <div ref={canvasContainerRef} className="bg-muted rounded-lg p-8 flex items-center justify-center " style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.1)" }}>
+            <div ref={canvasContainerRef} className="bg-muted rounded-lg p-8 flex items-center justify-left overflow-x-auto " style={{ background: "linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%)", boxShadow: "inset 0 2px 8px rgba(0,0,0,0.1)" }}>
               <div style={{ transform: "perspective(1000px) rotateX(-5deg)", transformStyle: "preserve-3d", boxShadow: "0 10px 30px rgba(0,0,0,0.3)", borderRadius: "4px" }}>
                 <canvas className="rounded" />
               </div>
