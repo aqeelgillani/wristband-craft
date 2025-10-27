@@ -162,32 +162,19 @@ const DesignStudio = () => {
       console.error("Failed to load templates:", error);
     }
   };
-
-
-  useEffect(() => {
+useEffect(() => {
   const fetchPricing = async () => {
     if (quantity < 1000) return;
     setLoadingPrice(true);
     try {
-      // Base price is 39€ for 1000pcs regardless of print
-      const basePrice = 0.039; // €0.039 per unit (39€ / 1000)
-      const extraCharges: any = {};
-      
-      // Add optional extras
-      if (hasTrademark) {
-        extraCharges.trademark = 15; // €15 fixed per order
-      }
-      if (hasPrint) {
-        extraCharges.print = 39; // €39 fixed per order (print charge)
-      }
-      if (hasQrCode) {
-        extraCharges.qrCode = 15; // €15 fixed per order
-      }
+      const basePrice = 0.039; // €0.039 per unit (39€/1000)
+      const extraCharges: Record<string, number> = {};
 
-      // Compute per-unit price (only includes base)
-      const unitPrice = basePrice;
+      if (hasTrademark) extraCharges.trademark = 15;
+      if (hasPrint) extraCharges.print = 39;
+      if (hasQrCode) extraCharges.qrCode = 15;
 
-      // Total = base price * quantity + fixed extras
+      const unitPrice = basePrice; // Only base is per-unit
       const totalExtras =
         (extraCharges.trademark || 0) +
         (extraCharges.print || 0) +
@@ -803,21 +790,63 @@ const DesignStudio = () => {
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Click text on canvas to edit, drag to position. Select object and press Delete to remove.</p>
               </div>
-              <div className="bg-secondary/20 p-4 rounded-lg space-y-2">
-                <h3 className="font-semibold text-lg mb-3">Order Summary</h3>
-                {loadingPrice ? <div className="flex items-center justify-center py-4"><Loader2 className="h-6 w-6 animate-spin" /></div> : pricing ? (
-                  <>
-                    <div className="flex justify-between text-sm"><span>Base Price (with/without print):</span><span>{currencySymbol}39.00 / 1000 pcs</span></div>
-                    {pricing.extraCharges.trademark && <div className="flex justify-between text-sm"><span>Trademark Text:</span><span>+{currencySymbol}15.00 / 1000 pcs</span></div>}
-                    {pricing.extraCharges.qrCode && <div className="flex justify-between text-sm"><span>QR Code:</span><span>+{currencySymbol}15.00 / 1000 pcs</span></div>}
-                    <div className="border-t pt-2 mt-2">
-                      <div className="flex justify-between font-medium"><span>Unit Price:</span><span>{currencySymbol}{pricing.unitPrice.toFixed(3)}</span></div>
-                      <div className="flex justify-between text-sm"><span>Quantity:</span><span>{quantity} pcs</span></div>
-                    </div>
-                    <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary"><span>Total:</span><span>{currencySymbol}{pricing.totalPrice.toFixed(2)}</span></div>
-                  </>
-                ) : <p className="text-sm text-muted-foreground text-center py-4">Enter quantity to see pricing</p>}
-              </div>
+<div className="bg-secondary/20 p-4 rounded-lg space-y-2">
+  <h3 className="font-semibold text-lg mb-3">Order Summary</h3>
+  {loadingPrice ? (
+    <div className="flex items-center justify-center py-4">
+      <Loader2 className="h-6 w-6 animate-spin" />
+    </div>
+  ) : pricing ? (
+    <>
+      <div className="flex justify-between text-sm">
+        <span>Base Price (with/without print):</span>
+        <span>{currencySymbol}39.00 / 1000 pcs</span>
+      </div>
+
+      {pricing.extraCharges.trademark && (
+        <div className="flex justify-between text-sm">
+          <span>Trademark Text:</span>
+          <span>+{currencySymbol}{pricing.extraCharges.trademark.toFixed(2)}</span>
+        </div>
+      )}
+
+      {pricing.extraCharges.print && (
+        <div className="flex justify-between text-sm">
+          <span>Print:</span>
+          <span>+{currencySymbol}{pricing.extraCharges.print.toFixed(2)}</span>
+        </div>
+      )}
+
+      {pricing.extraCharges.qrCode && (
+        <div className="flex justify-between text-sm">
+          <span>QR Code:</span>
+          <span>+{currencySymbol}{pricing.extraCharges.qrCode.toFixed(2)}</span>
+        </div>
+      )}
+
+      <div className="border-t pt-2 mt-2">
+        <div className="flex justify-between font-medium">
+          <span>Unit Price:</span>
+          <span>{currencySymbol}{(pricing.unitPrice || 0).toFixed(3)}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span>Quantity:</span>
+          <span>{quantity} pcs</span>
+        </div>
+      </div>
+
+      <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary">
+        <span>Total:</span>
+        <span>{currencySymbol}{(pricing.totalPrice || 0).toFixed(2)}</span>
+      </div>
+    </>
+  ) : (
+    <p className="text-sm text-muted-foreground text-center py-4">
+      Enter quantity to see pricing
+    </p>
+  )}
+</div>
+
               <Button onClick={handlePlaceOrder} disabled={saving || !pricing} variant="hero" className="w-full">
                 <ShoppingCart className="h-4 w-4 mr-2" />
                 {pricing ? `Continue to Summary ${currencySymbol}${pricing.totalPrice.toFixed(2)}` : "Continue"}
