@@ -852,7 +852,14 @@ const DesignStudio = () => {
                   onClick={() => {
                     const confirmNew = window.confirm("Create a new design with different quantity or print options? Current design will be saved if you proceed to checkout.");
                     if (confirmNew) {
-                      window.open("/design-studio", "_blank");
+                      try {
+                        // Signal the new tab to open the design studio after the app root loads.
+                        localStorage.setItem("open_new_design", "true");
+                      } catch (e) {
+                        // ignore localStorage errors
+                      }
+                      // Open root in a new tab (safer for direct routing)
+                      window.open("/", "_blank");
                       toast.success("New design tab opened");
                     }
                   }}

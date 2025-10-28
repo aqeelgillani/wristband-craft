@@ -3,9 +3,27 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import heroImage from "@/assets/hero-wristbands.jpg";
 import { Palette, Zap, ShieldCheck, ArrowRight } from "lucide-react";
+import { useEffect } from "react";
+import { toast } from "sonner";
 
 const Index = () => {
   const navigate = useNavigate();
+
+  useEffect(() => {
+    try {
+      const openNew = localStorage.getItem("open_new_design");
+      if (openNew === "true") {
+        localStorage.removeItem("open_new_design");
+        // Small delay to ensure app mounts correctly before navigation
+        setTimeout(() => {
+          navigate("/design-studio");
+          toast.success("Opened new design studio");
+        }, 50);
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [navigate]);
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
