@@ -12,6 +12,7 @@ import MyOrders from "./pages/MyOrders";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminPasswordReset from "./pages/AdminPasswordReset";
 import OrderSummary from "./pages/OrderSummary";
+import Address from "./pages/Address";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 
@@ -63,6 +64,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <OrderSummary />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/address"
+            element={
+              <ProtectedRoute>
+                <Address />
               </ProtectedRoute>
             }
           />

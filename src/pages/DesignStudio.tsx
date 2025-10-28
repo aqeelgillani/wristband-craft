@@ -11,10 +11,11 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { ArrowLeft, ShoppingCart, Loader2, Save, Download, Printer, Trash2, Plus } from "lucide-react";
 import { Canvas as FabricCanvas, Image as FabricImage, IText, Line, Rect } from "fabric";
+import QRPlaceholderImg from "@/assets/QRplaceholder.png";
 
 type Currency = "EUR";
 type WristbandType = "silicone" | "fabric" | "vinyl" | "tyvek";
-type PrintType = "none" | "print";
+type PrintType = "none" | "black" | "full_color";
 
 const TYVEK_COLORS = [
   { name: "White", value: "#FFFFFF" },
@@ -56,6 +57,7 @@ interface SavedTemplate {
 const DesignStudio = () => {
   const navigate = useNavigate();
   const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const isLoadingTemplateRef = useRef(false);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
   const [uploadedImage, setUploadedImage] = useState<FabricImage | null>(null);
   const [customText, setCustomText] = useState("");
@@ -74,7 +76,7 @@ const DesignStudio = () => {
   const [saving, setSaving] = useState(false);
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
   const [trademarkTextObj, setTrademarkTextObj] = useState<IText | null>(null);
-  const [qrPlaceholder, setQrPlaceholder] = useState<Rect | null>(null);
+  const [qrPlaceholder, setQrPlaceholder] = useState<FabricImage | null>(null);
 
   useEffect(() => {
     if (!canvasContainerRef.current || fabricCanvas) return;
@@ -88,13 +90,12 @@ const DesignStudio = () => {
     const qrWhiteSpace = new Rect({
       left: 0,
       top: 0,
-      width: 90,
+      width: 100,
       height: 100,
       fill: '#FFFFFF',
       selectable: false,
       evented: false,
-      rx: 10, // Rounded corner on left
-      ry: 10,
+   
     });
     
     // Add right white space for closing end (50px wide)
@@ -162,13 +163,6 @@ const DesignStudio = () => {
       console.error("Failed to load templates:", error);
     }
   };
-useEffect(() => {
-  const fetchPricing = async () => {
-    if (quantity < 1000) return;
-    setLoadingPrice(true);
-    try {
-      const basePrice = 0.039; // €0.039 per unit (39€/1000)
-      const extraCharges: Record<string, number> = {};
 
 
   useEffect(() => {
@@ -222,28 +216,33 @@ useEffect(() => {
   // Update trademark text on canvas (vertical and rotatable)
   useEffect(() => {
     if (!fabricCanvas) return;
-    
-    // Remove existing trademark text
+    // If we're loading a template, skip programmatic trademark insertion to avoid duplicates
+    if (isLoadingTemplateRef.current) return;
+
+    // Remove existing trademark text object we previously managed
     if (trademarkTextObj) {
-      fabricCanvas.remove(trademarkTextObj);
+      try { fabricCanvas.remove(trademarkTextObj); } catch (e) { /* ignore */ }
       setTrademarkTextObj(null);
     }
-    
-    // Add new trademark text if enabled (vertical and rotatable)
+
+    // Add new trademark text if enabled (vertical and fixed position after QR space)
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 630, // Center of design area: 90 + (1080 / 2)
-        top: 50,
-        fontSize: 18,
+        left: 86, // Position right after QR space (90px + 30px margin)
+        top: 85,
+        fontSize: 20,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
         fontFamily: "Arial",
         fontWeight: 'light',
         originX: 'center',
         originY: 'center',
-        angle: 90, // Rotate 90 degrees for vertical text
-        lockRotation: false, // Allow rotation
+        angle: -90, // Rotate 90 degrees for vertical text
+        lockMovementX: true, // Lock horizontal movement
+        lockMovementY: true, // Lock vertical movement
+        lockRotation: true, // Lock rotation
+        selectable: true,
       });
-      
+
       fabricCanvas.add(text);
       setTrademarkTextObj(text);
       fabricCanvas.renderAll();
@@ -262,39 +261,28 @@ useEffect(() => {
     
     // Add QR placeholder if enabled (in the white left area)
     if (hasQrCode) {
-      const qrRect = new Rect({
-        left: 10,
-        top: 15,
-        width: 70,
-        height: 70,
-        fill: "#FFFFFF",
-        stroke: "#00AA00",
-        strokeWidth: 3,
-        selectable: false,
-        evented: false,
-        rx: 5,
-        ry: 5,
+      // Use the provided PNG asset as the QR placeholder
+      FabricImage.fromURL(QRPlaceholderImg, { crossOrigin: "anonymous" }).then((img) => {
+        // Scale to fit placeholder area (70x70)
+        try {
+          img.scaleToWidth(70);
+          if (img.getScaledHeight() > 70) img.scaleToHeight(70);
+        } catch (e) {}
+
+        img.set({
+          left: 10,
+          top: 15,
+          selectable: false,
+          evented: false,
+        });
+
+        fabricCanvas.add(img);
+        fabricCanvas.bringObjectToFront(img);
+        setQrPlaceholder(img);
+        fabricCanvas.renderAll();
+      }).catch((err) => {
+        console.error('Failed to load QR placeholder image:', err);
       });
-      
-      // Add "QR" text inside
-      const qrText = new IText("QR", {
-        left: 45,
-        top: 50,
-        fontSize: 16,
-        fill: "#00AA00",
-        fontFamily: "Arial",
-        fontWeight: "bold",
-        originX: 'center',
-        originY: 'center',
-        selectable: false,
-        evented: false,
-      });
-      
-      fabricCanvas.add(qrRect, qrText);
-      fabricCanvas.bringObjectToFront(qrRect);
-      fabricCanvas.bringObjectToFront(qrText);
-      setQrPlaceholder(qrRect);
-      fabricCanvas.renderAll();
     }
   }, [hasQrCode, fabricCanvas]);
 
@@ -305,6 +293,9 @@ useEffect(() => {
       toast.error("Image must be less than 5MB");
       return;
     }
+  // Auto-enable print when logo is uploaded (assume full color)
+  setPrintType("full_color");
+  setHasPrint(true);
     const reader = new FileReader();
     reader.onload = async (event) => {
       const imgUrl = event.target?.result as string;
@@ -349,11 +340,14 @@ useEffect(() => {
       return;
     }
 
+    const colorInput = document.getElementById("textColor") as HTMLInputElement;
+    const selectedColor = colorInput ? colorInput.value : "#000000";
+
     const text = new IText(customText, {
       left: 625, // Center of design area: 100 + (1050 / 2)
       top: 50,
-      fontSize: 24,
-      fill: "#000000",
+      fontSize: 36,
+      fill: selectedColor,
       fontFamily: "Arial",
       originX: 'center',
       fontWeight: 'bold', 
@@ -420,20 +414,48 @@ useEffect(() => {
 
       const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
       
-      const { error: designError } = await supabase.from("designs").insert({
+      const { data, error: designError } = await supabase.from("designs").insert({
         user_id: session.user.id,
         design_url: publicUrl,
         wristband_color: wristbandColor,
         wristband_type: wristbandType,
         custom_text: trademarkText || "",
         text_color: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
-      });
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }).select();
       if (designError) {
         console.error("Design insert error:", designError);
         throw designError;
       }
 
       toast.success("Template saved successfully");
+      // Save to localStorage cart (designs created in this browser)
+      try {
+        const cartRaw = localStorage.getItem("cart_designs");
+        const cart = cartRaw ? JSON.parse(cartRaw) : [];
+        const cartItem = {
+          designUrl: publicUrl,
+          orderDetails: {
+            quantity,
+            total_price: pricing?.totalPrice || 0,
+            unit_price: pricing?.unitPrice || 0,
+            currency,
+            wristband_type: wristbandType,
+            print_type: printType,
+            has_trademark: hasTrademark,
+            trademark_text: trademarkText,
+            has_qr_code: hasQrCode,
+          },
+          // Persist canvas JSON so the template can be reloaded/edited in-browser
+          canvasJson: fabricCanvas.toJSON(),
+          created_at: new Date().toISOString(),
+        };
+        cart.push(cartItem);
+        localStorage.setItem("cart_designs", JSON.stringify(cart));
+      } catch (e) {
+        console.error("Failed to save design to localStorage", e);
+      }
       loadTemplates();
     } catch (error: any) {
       console.error("Save template error:", error);
@@ -526,6 +548,33 @@ useEffect(() => {
       }).select().single();
       if (orderError) throw orderError;
 
+      // Add this placed order to localStorage cart_designs so it appears in "Your Order" list
+      try {
+        const cartRaw = localStorage.getItem("cart_designs");
+        const cart = cartRaw ? JSON.parse(cartRaw) : [];
+        const cartItem = {
+          designUrl: publicUrl,
+          orderId: order.id,
+          orderDetails: {
+            quantity,
+            total_price: pricing.totalPrice,
+            unit_price: pricing.unitPrice,
+            currency,
+            wristband_type: wristbandType,
+            print_type: printType,
+            has_trademark: hasTrademark,
+            trademark_text: trademarkText,
+            has_qr_code: hasQrCode,
+          },
+          canvasJson: fabricCanvas.toJSON(),
+          created_at: new Date().toISOString(),
+        };
+        cart.push(cartItem);
+        localStorage.setItem("cart_designs", JSON.stringify(cart));
+      } catch (e) {
+        console.error("Failed to append placed order to localStorage", e);
+      }
+
       // Navigate to order summary page
       navigate("/order-summary", {
         state: {
@@ -612,6 +661,23 @@ useEffect(() => {
                     const objects = fabricCanvas.getObjects().filter(obj => obj.selectable !== false);
                     fabricCanvas.remove(...objects);
                     setUploadedImage(null);
+                    // Reset pricing/order summary and related options to defaults
+                    setPricing(null);
+                    setHasPrint(false);
+                    setPrintType("none");
+                    setHasTrademark(false);
+                    setHasQrCode(false);
+                    setTrademarkText("");
+                    // remove trademark text object and qr placeholder from canvas if present
+                    if (trademarkTextObj) {
+                      try { fabricCanvas.remove(trademarkTextObj); } catch (e) {}
+                      setTrademarkTextObj(null);
+                    }
+                    if (qrPlaceholder) {
+                      try { fabricCanvas.remove(qrPlaceholder); } catch (e) {}
+                      setQrPlaceholder(null);
+                    }
+                    fabricCanvas.renderAll();
                     toast.success("Canvas cleared");
                   }
                 }}
@@ -643,26 +709,115 @@ useEffect(() => {
                     <div 
                       key={template.id} 
                       className="relative group border rounded-lg overflow-hidden cursor-pointer"
-                      onClick={() => {
-                        // Load template into canvas
-                        if (!fabricCanvas) return;
-                        FabricImage.fromURL(template.design_url, { crossOrigin: "anonymous" }).then((img) => {
-                          // Clear canvas first
-                          const objects = fabricCanvas.getObjects().filter(obj => obj.selectable !== false);
-                          fabricCanvas.remove(...objects);
+                        onClick={() => {
+                          // When loading a saved template we want to copy the configuration
+                          // (colors, type, quantity, print, trademark, QR) rather than
+                          // overlaying the saved PNG on top of the current canvas.
+                          if (!fabricCanvas) return;
+
+                          // Remove existing selectable design objects (images/text) so nothing overlaps
+                          const removable = fabricCanvas.getObjects().filter(obj => obj.selectable !== false);
+                          if (removable.length) {
+                            try { fabricCanvas.remove(...removable); } catch (e) { /* ignore */ }
+                          }
                           setUploadedImage(null);
-                          
-                          // Add template image
-                          img.scaleToWidth(fabricCanvas.width!);
-                          fabricCanvas.add(img);
-                          fabricCanvas.renderAll();
-                          
-                          // Update settings
-                          setWristbandColor(template.wristband_color);
-                          setWristbandType(template.wristband_type as WristbandType);
-                          toast.success("Template loaded");
-                        });
-                      }}
+
+                          // Restore basic settings from the template record
+                          setWristbandColor(template.wristband_color || wristbandColor);
+                          setWristbandType((template.wristband_type as WristbandType) || wristbandType);
+
+                          // Restore trademark/text color saved on the template record if present
+                          // @ts-ignore
+                          const customTextFromTemplate = (template as any).custom_text;
+                          // @ts-ignore
+                          const textColorFromTemplate = (template as any).text_color;
+                          if (customTextFromTemplate) {
+                            setTrademarkText(customTextFromTemplate || trademarkText);
+                            if (textColorFromTemplate && String(textColorFromTemplate).toLowerCase() === "#ffffff") {
+                              setTrademarkTextColor("white");
+                            } else if (textColorFromTemplate && String(textColorFromTemplate).toLowerCase() === "#000000") {
+                              setTrademarkTextColor("black");
+                            }
+                            setHasTrademark(true);
+                          }
+
+                          // Try to restore richer order settings from localStorage (the save flow writes these)
+                          try {
+                            const cartRaw = localStorage.getItem("cart_designs");
+                            if (cartRaw) {
+                              const cart = JSON.parse(cartRaw);
+                              const match = Array.isArray(cart) && cart.find((c: any) => c.designUrl === template.design_url);
+                              if (match) {
+                                const od = match.orderDetails || {};
+
+                                // First, apply UI state from orderDetails so effects and pricing recalc
+                                if (od.quantity) setQuantity(od.quantity);
+                                if (od.print_type) {
+                                  setPrintType(od.print_type as PrintType);
+                                  setHasPrint(od.print_type !== "none");
+                                }
+                                if (typeof od.has_trademark === "boolean") {
+                                  setHasTrademark(od.has_trademark);
+                                }
+                                if (od.trademark_text) setTrademarkText(od.trademark_text);
+                                if (typeof od.has_qr_code === "boolean") setHasQrCode(od.has_qr_code);
+
+                                // If we have saved canvas JSON, load it after applying UI state so
+                                // restored objects (text/logo) are consistent with UI flags.
+                                if (match.canvasJson && fabricCanvas) {
+                                  try {
+                                    isLoadingTemplateRef.current = true;
+                                    fabricCanvas.loadFromJSON(match.canvasJson, () => {
+                                      // After JSON load, re-render and set uploadedImage for duplication
+                                      fabricCanvas.renderAll();
+                                      const imgObj = fabricCanvas.getObjects().find(o => (o as any).type === 'image') as FabricImage | undefined;
+                                      if (imgObj) setUploadedImage(imgObj as any);
+
+                                      // Ensure trademark IText exists if UI requested it but JSON didn't include it
+                                      if (od.trademark_text && !fabricCanvas.getObjects().some(o => (o as any).text === od.trademark_text)) {
+                                        try {
+                                          const text = new IText(od.trademark_text, {
+                                            left: 86,
+                                            top: 85,
+                                            fontSize: 20,
+                                            fill: (od.text_color && String(od.text_color).toLowerCase() === '#ffffff') ? '#FFFFFF' : '#000000',
+                                            fontFamily: 'Arial',
+                                            originX: 'center',
+                                            originY: 'center',
+                                            angle: -90,
+                                            lockMovementX: true,
+                                            lockMovementY: true,
+                                            lockRotation: true,
+                                            selectable: true,
+                                          });
+                                          fabricCanvas.add(text);
+                                          setTrademarkTextObj(text);
+                                        } catch (e) {
+                                          console.warn('Failed to add trademark text after JSON load', e);
+                                        }
+                                      }
+
+                                      isLoadingTemplateRef.current = false;
+                                    });
+                                  } catch (e) {
+                                    console.warn('Failed to load canvas JSON for template', e);
+                                    isLoadingTemplateRef.current = false;
+                                  }
+                                }
+                              }
+                            }
+                          } catch (e) {
+                            console.warn("Failed to restore template details from localStorage", e);
+                          }
+
+                          // Re-render canvas background color
+                          if (fabricCanvas) {
+                            fabricCanvas.backgroundColor = template.wristband_color || fabricCanvas.backgroundColor;
+                            fabricCanvas.renderAll();
+                          }
+
+                          toast.success("Template configuration applied");
+                        }}
                     >
                       <img src={template.design_url} alt="Template" className="w-full h-20 object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -695,7 +850,6 @@ useEffect(() => {
                   variant="outline"
                   size="sm"
                   onClick={() => {
-                    // Save current design and open new one
                     const confirmNew = window.confirm("Create a new design with different quantity or print options? Current design will be saved if you proceed to checkout.");
                     if (confirmNew) {
                       window.open("/design-studio", "_blank");
@@ -751,7 +905,15 @@ useEffect(() => {
               )}
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="print" checked={printType === "print"} onCheckedChange={(c) => setPrintType(c ? "print" : "none")} />
+                  <Checkbox
+                    id="print"
+                    checked={hasPrint}
+                    onCheckedChange={(c) => {
+                      const checked = !!c;
+                      setHasPrint(checked);
+                      setPrintType(checked ? "full_color" : "none");
+                    }}
+                  />
                   <Label htmlFor="print" className="cursor-pointer">Add Print (included in base price)</Label>
                 </div>
                 <div className="space-y-2">
@@ -796,17 +958,25 @@ useEffect(() => {
               </div>
               <div>
                 <Label>Add Custom Text</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input
-                    type="text"
-                    value={customText}
-                    onChange={(e) => setCustomText(e.target.value)}
-                    placeholder="Enter your text"
-                    onKeyDown={(e) => e.key === "Enter" && handleAddText()}
-                  />
-                  <Button onClick={handleAddText} variant="outline">
-                    Add Text
-                  </Button>
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      type="text"
+                      value={customText}
+                      onChange={(e) => setCustomText(e.target.value)}
+                      placeholder="Enter your text"
+                      onKeyDown={(e) => e.key === "Enter" && handleAddText()}
+                    />
+                    <Input
+                      type="color"
+                      className="w-20"
+                      id="textColor"
+                      defaultValue="#000000"
+                    />
+                    <Button onClick={handleAddText} variant="outline">
+                      Add Text
+                    </Button>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">Click text on canvas to edit, drag to position. Select object and press Delete to remove.</p>
               </div>

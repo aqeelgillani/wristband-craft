@@ -3,8 +3,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Truck, Clock, Calendar, ShieldCheck, Download as DownloadIcon, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
 
@@ -20,75 +19,114 @@ const OrderSummary = () => {
   const state = location.state as LocationState;
 
   const [loading, setLoading] = useState(false);
-  const [shippingAddress, setShippingAddress] = useState({
-    name: "",
-    address: "",
-    city: "",
-    state: "",
-    zipCode: "",
-    country: "",
-    phone: "",
-  });
+  const [designsInCart, setDesignsInCart] = useState<any[] | null>(null);
+  const [expressDelivery, setExpressDelivery] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [loadingProceed, setLoadingProceed] = useState(false);
+
+  const handleDeleteDesign = (idx: number) => {
+    if (!designsInCart) return;
+
+    const newDesigns = [...designsInCart];
+    newDesigns.splice(idx, 1);
+    setDesignsInCart(newDesigns);
+
+    // Update localStorage
+    try {
+      localStorage.setItem("cart_designs", JSON.stringify(newDesigns));
+      toast.success("Design removed from cart");
+
+      // If cart is empty after deletion, redirect to design studio
+      if (newDesigns.length === 0) {
+        navigate("/design-studio");
+      }
+    } catch (e) {
+      console.error("Failed to update cart in localStorage", e);
+      toast.error("Failed to remove design");
+    }
+  };
 
   useEffect(() => {
-    if (!state?.orderId || !state?.designUrl) {
-      toast.error("Invalid order data");
-      navigate("/design-studio");
+    // If there's no navigation state, check localStorage for saved cart designs.
+    // Only redirect back to the design studio when neither is present.
+    try {
+      const raw = localStorage.getItem("cart_designs");
+      const parsed = raw ? JSON.parse(raw) : null;
+      const hasLocalCart = Array.isArray(parsed) && parsed.length > 0;
+
+      if (!state && !hasLocalCart) {
+        toast.error("Invalid order data");
+        navigate("/design-studio");
+      }
+      // If state exists we let other logic handle missing fields (fallbacks exist)
+    } catch (e) {
+      // If localStorage read fails, fall back to previous behavior
+      if (!state?.orderId || !state?.designUrl) {
+        toast.error("Invalid order data");
+        navigate("/design-studio");
+      }
     }
   }, [state, navigate]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setShippingAddress({ ...shippingAddress, [e.target.name]: e.target.value });
+  useEffect(() => {
+    // Load designs created in this browser from localStorage (if any).
+    try {
+      const raw = localStorage.getItem("cart_designs");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setDesignsInCart(parsed);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to read cart designs from localStorage", e);
+    }
+
+    // Fallback to single design passed in navigation state
+    setDesignsInCart([
+      { designUrl: state.designUrl, orderDetails: state.orderDetails, orderId: state.orderId },
+    ]);
+  }, [state]);
+
+  const downloadTerms = () => {
+    const blob = new Blob([
+      "Terms and Conditions (dummy)\n\nThese are placeholder terms and conditions. Replace with real document.",
+    ], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "terms_and_conditions.pdf";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   };
 
-  const handleProceedToPayment = async () => {
-    if (!shippingAddress.name || !shippingAddress.address || !shippingAddress.city || !shippingAddress.zipCode || !shippingAddress.country) {
-      toast.error("Please fill in all required address fields");
+  const handleProceedToAddress = () => {
+    if (!termsAccepted) {
+      toast.error("Please accept the Terms and Conditions before proceeding");
       return;
     }
 
-    setLoading(true);
-    try {
-      // Update order with shipping address
-      const { error: updateError } = await supabase
-        .from("orders")
-        .update({ shipping_address: shippingAddress })
-        .eq("id", state.orderId);
-
-      if (updateError) throw updateError;
-
-      // Create Stripe checkout session
-      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-checkout", {
-        body: { orderId: state.orderId },
-      });
-
-      if (checkoutError || !checkoutData?.url) throw new Error("Failed to create checkout");
-
-      // Update order with stripe session id
-      await supabase.from("orders").update({ stripe_session_id: checkoutData.sessionId }).eq("id", state.orderId);
-
-      // Send admin notification about new order
-      try {
-        await supabase.functions.invoke("send-admin-notification", {
-          body: { orderId: state.orderId },
-        });
-      } catch (notificationError) {
-        console.error("Failed to send admin notification:", notificationError);
-      }
-
-      window.open(checkoutData.url, "_blank");
-      toast.success("Redirecting to checkout...");
-      
-      // Navigate to my orders after a delay
-      setTimeout(() => navigate("/my-orders"), 2000);
-    } catch (error: any) {
-      toast.error(error.message || "An error occurred");
-    } finally {
-      setLoading(false);
+    // Ensure we have designs to process
+    if (!designsInCart || designsInCart.length === 0) {
+      toast.error("Your cart is empty");
+      navigate("/design-studio");
+      return;
     }
+
+    // Navigate to address entry page (addresses are handled on another page)
+    navigate("/address", {
+      state: {
+        designs: designsInCart,
+        expressDelivery,
+      },
+    });
   };
 
-  if (!state?.orderId) return null;
+  // Wait until we know whether we have designs either from navigation state or localStorage
+  if (!state && !designsInCart) return null;
 
   const currencySymbol = state.orderDetails?.currency === "USD" ? "$" : state.orderDetails?.currency === "EUR" ? "€" : "£";
 
@@ -112,157 +150,126 @@ const OrderSummary = () => {
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Your Order</h2>
             
-            {/* Design Preview */}
-            <div className="mb-6 bg-muted rounded-lg p-4">
-              <h3 className="text-sm font-medium mb-2">Design Preview</h3>
-              <img 
-                src={state.designUrl} 
-                alt="Wristband Design" 
-                className="w-full h-auto rounded-lg shadow-lg"
-              />
-            </div>
+            {/* Designs list (all designs created in this browser or single fallback) */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Designs</h3>
+              {designsInCart && designsInCart.length > 0 ? (
+                <div className="grid grid-cols-1 gap-3">
+                  {designsInCart.map((d, idx) => (
+                    <div key={idx} className="flex items-center gap-3 p-3 bg-muted rounded">
+                      <img src={d.designUrl} alt={`Design ${idx + 1}`} className="w-100 h-8 object-cover rounded" />
+                      <div className="flex-1 text-sm">
+                        <div className="flex justify-between items-center">
+                          <div>{d.orderDetails?.wristband_type || d.wristband_type}</div>
+                          <div className="font-medium">{currencySymbol}{(d.orderDetails?.unit_price || d.unit_price || 0).toFixed(2)}</div>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <div className="text-muted-foreground">{d.orderDetails?.quantity || d.quantity} pcs</div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDeleteDesign(idx)}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No designs found in this browser.</p>
+              )}
 
-            {/* Order Details */}
-            <div className="space-y-3 border-t pt-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Quantity:</span>
-                <span className="font-medium">{state.orderDetails?.quantity} pcs</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Wristband Type:</span>
-                <span className="font-medium capitalize">{state.orderDetails?.wristband_type}</span>
-              </div>
-              {state.orderDetails?.print_type && state.orderDetails.print_type !== "none" && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Print Type:</span>
-                  <span className="font-medium capitalize">{state.orderDetails.print_type === "black" ? "Black Print" : "Full Color Print"}</span>
+              {/* Production & Delivery Info */}
+              <div className="mt-4 border-t pt-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Clock className="w-4 h-4" />
+                    <div>
+                      <div className="font-medium">Production</div>
+                      <div className="text-muted-foreground text-xs">{expressDelivery ? "2 - 3 days" : "3 - 6 days"}</div>
+                    </div>
+                  </div>
                 </div>
-              )}
-              {state.orderDetails?.has_secure_guests && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Secure Guests:</span>
-                  <span className="font-medium">Yes</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Truck className="w-4 h-4" />
+                    <div>
+                      <div className="font-medium">Shipping</div>
+                      <div className="text-muted-foreground text-xs">1 day</div>
+                    </div>
+                  </div>
                 </div>
-              )}
-              <div className="flex justify-between text-sm border-t pt-2">
-                <span className="text-muted-foreground">Unit Price:</span>
-                <span className="font-medium">{currencySymbol}{state.orderDetails?.unit_price?.toFixed(2)}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm">
+                    <Calendar className="w-4 h-4" />
+                    <div>
+                      <div className="font-medium">Door Delivery</div>
+                      <div className="text-muted-foreground text-xs">Same day</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm">
+                    <ShieldCheck className="w-4 h-4" />
+                    <div>
+                      <div className="font-medium">Guarantee</div>
+                      <div className="text-muted-foreground text-xs">{expressDelivery ? "max 4 days" : "max 7 days"}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary">
-                <span>Total:</span>
-                <span>{currencySymbol}{state.orderDetails?.total_price?.toFixed(2)}</span>
+
+              {/* Express delivery option */}
+              <div className="flex items-center gap-2 mt-3">
+                <input id="express" type="checkbox" checked={expressDelivery} onChange={(e) => setExpressDelivery(e.target.checked)} />
+                <label htmlFor="express" className="text-sm">Express Delivery (+{currencySymbol}19.00)</label>
+              </div>
+
+              {/* Totals summary */}
+              <div className="border-t pt-3">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal:</span>
+                  <span className="font-medium">{currencySymbol}{designsInCart?.reduce((sum, d) => sum + ((d.orderDetails?.total_price || d.total_price || 0) ), 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>Express Fee:</span>
+                  <span className="font-medium">{currencySymbol}{expressDelivery ? "19.00" : "0.00"}</span>
+                </div>
+                <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary">
+                  <span>Total:</span>
+                  <span>{currencySymbol}{(designsInCart?.reduce((sum, d) => sum + ((d.orderDetails?.total_price || d.total_price || 0) ), 0) + (expressDelivery ? 19 : 0)).toFixed(2)}</span>
+                </div>
               </div>
             </div>
           </Card>
 
-          {/* Delivery Address Form */}
+          {/* Next steps: Terms, download, continue to address */}
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Delivery Address</h2>
+            <h2 className="text-xl font-semibold mb-4">Next Steps</h2>
             <div className="space-y-4">
-              <div>
-                <Label htmlFor="name">Full Name *</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  value={shippingAddress.name}
-                  onChange={handleInputChange}
-                  placeholder="John Doe"
-                  className="mt-2"
-                  required
-                />
+              <div className="flex items-center gap-2">
+                <input id="terms" type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} />
+                <label htmlFor="terms" className="text-sm">I accept the <strong>Terms and Conditions</strong></label>
               </div>
-              <div>
-                <Label htmlFor="address">Street Address *</Label>
-                <Input
-                  id="address"
-                  name="address"
-                  value={shippingAddress.address}
-                  onChange={handleInputChange}
-                  placeholder="123 Main Street, Apt 4B"
-                  className="mt-2"
-                  required
-                />
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={downloadTerms}>
+                  <DownloadIcon className="w-4 h-4 mr-2" /> Download Terms (PDF)
+                </Button>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="city">City *</Label>
-                  <Input
-                    id="city"
-                    name="city"
-                    value={shippingAddress.city}
-                    onChange={handleInputChange}
-                    placeholder="New York"
-                    className="mt-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="state">State/Province</Label>
-                  <Input
-                    id="state"
-                    name="state"
-                    value={shippingAddress.state}
-                    onChange={handleInputChange}
-                    placeholder="NY"
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="zipCode">Zip/Postal Code *</Label>
-                  <Input
-                    id="zipCode"
-                    name="zipCode"
-                    value={shippingAddress.zipCode}
-                    onChange={handleInputChange}
-                    placeholder="10001"
-                    className="mt-2"
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="country">Country *</Label>
-                  <Input
-                    id="country"
-                    name="country"
-                    value={shippingAddress.country}
-                    onChange={handleInputChange}
-                    placeholder="United States"
-                    className="mt-2"
-                    required
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  value={shippingAddress.phone}
-                  onChange={handleInputChange}
-                  placeholder="+1 (555) 123-4567"
-                  className="mt-2"
-                />
-              </div>
+
+              <div className="text-sm text-muted-foreground">Addresses will be collected on the next page.</div>
+
               <Button
-                onClick={handleProceedToPayment}
-                disabled={loading}
+                onClick={handleProceedToAddress}
+                disabled={loadingProceed || !designsInCart || designsInCart.length === 0}
                 className="w-full mt-6"
                 variant="hero"
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCart className="h-4 w-4 mr-2" />
-                    Proceed to Payment
-                  </>
-                )}
+                <ShoppingCart className="h-4 w-4 mr-2" />
+                Continue to Address
               </Button>
             </div>
           </Card>
