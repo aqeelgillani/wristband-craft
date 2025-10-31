@@ -502,7 +502,7 @@ const DesignStudio = () => {
       } catch (e) {
         console.error("Failed to save design to localStorage", e);
       }
-    
+      loadTemplates();
     } catch (error: any) {
       console.error("Save template error:", error);
       toast.error(error.message || "Failed to save template");
