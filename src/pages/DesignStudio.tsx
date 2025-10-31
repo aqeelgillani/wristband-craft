@@ -346,7 +346,7 @@ const DesignStudio = () => {
     const selectedColor = colorInput ? colorInput.value : "#000000";
 
     const text = new IText(customText, {
-      left: 625, // Center of design area: 100 + (1050 / 2)
+      left: 625,
       top: 50,
       fontSize: 36,
       fill: selectedColor,
@@ -354,13 +354,25 @@ const DesignStudio = () => {
       originX: 'center',
       fontWeight: 'bold', 
       originY: 'center',
+      editable: true,
+      selectable: true,
+      evented: true,
+      lockMovementX: false,
+      lockMovementY: false,
+      clipPath: new Rect({
+        left: 100,
+        top: 8,
+        width: 1050,
+        height: 84,
+        absolutePositioned: true,
+      }),
     });
 
     fabricCanvas.add(text);
     fabricCanvas.setActiveObject(text);
     fabricCanvas.renderAll();
     setCustomText("");
-    toast.success("Text added to design");
+    toast.success("Text added! Double-click to edit");
   };
 
   const handleDuplicateLogo = () => {
@@ -660,17 +672,23 @@ const DesignStudio = () => {
                 size="sm" 
                 onClick={() => {
                   if (fabricCanvas) {
-                    const objects = fabricCanvas.getObjects().filter(obj => obj.selectable !== false);
+                    // Remove all user-added objects (keep QR/closing white spaces and diecut lines)
+                    const objects = fabricCanvas.getObjects().filter(obj => obj.selectable !== false && obj.evented !== false);
                     fabricCanvas.remove(...objects);
                     setUploadedImage(null);
-                    // Reset pricing/order summary and related options to defaults
-                    setPricing(null);
-                    setHasPrint(false);
+                    
+                    // Reset all settings to defaults
+                    setWristbandColor("#FFFFFF");
+                    setWristbandType("tyvek");
+                    setQuantity(1000);
                     setPrintType("none");
+                    setHasPrint(false);
                     setHasTrademark(false);
-                    setHasQrCode(false);
                     setTrademarkText("");
-                    // remove trademark text object and qr placeholder from canvas if present
+                    setTrademarkTextColor("black");
+                    setHasQrCode(false);
+                    setPricing(null);
+                    
                     if (trademarkTextObj) {
                       try { fabricCanvas.remove(trademarkTextObj); } catch (e) {}
                       setTrademarkTextObj(null);
@@ -679,8 +697,10 @@ const DesignStudio = () => {
                       try { fabricCanvas.remove(qrPlaceholder); } catch (e) {}
                       setQrPlaceholder(null);
                     }
+                    
+                    fabricCanvas.backgroundColor = "#FFFFFF";
                     fabricCanvas.renderAll();
-                    toast.success("Canvas cleared");
+                    toast.success("Canvas cleared - Ready for new design");
                   }
                 }}
               >
@@ -717,14 +737,14 @@ const DesignStudio = () => {
                         isLoadingTemplateRef.current = true;
                         
                         try {
-                          // Clear canvas first
-                          const removable = fabricCanvas.getObjects().filter(obj => obj.selectable !== false);
+                          // Clear canvas first (only user objects)
+                          const removable = fabricCanvas.getObjects().filter(obj => obj.selectable !== false && obj.evented !== false);
                           if (removable.length) {
                             fabricCanvas.remove(...removable);
                           }
                           setUploadedImage(null);
                           
-                          // Restore from localStorage first (has all the data)
+                          // Restore from localStorage (has complete design data)
                           const cartRaw = localStorage.getItem("cart_designs");
                           let restored = false;
                           
@@ -735,44 +755,63 @@ const DesignStudio = () => {
                             if (match && match.canvasJson && match.orderDetails) {
                               const od = match.orderDetails;
                               
-                              // Restore all settings
-                              setWristbandColor(template.wristband_color);
-                              setWristbandType(template.wristband_type as WristbandType);
+                              // Restore ALL settings
+                              setWristbandColor(od.wristband_color || template.wristband_color);
+                              setWristbandType((od.wristband_type || template.wristband_type) as WristbandType);
                               setQuantity(od.quantity || 1000);
                               setPrintType(od.print_type || "none");
-                              setHasPrint(od.print_type !== "none");
+                              setHasPrint(od.has_print !== undefined ? od.has_print : (od.print_type !== "none"));
                               setHasTrademark(od.has_trademark || false);
                               setTrademarkText(od.trademark_text || "");
                               setHasQrCode(od.has_qr_code || false);
                               
-                              // Set trademark color
-                              if (od.trademark_text) {
-                                const textColor = (template as any).text_color;
-                                if (textColor && textColor.toLowerCase() === "#ffffff") {
-                                  setTrademarkTextColor("white");
-                                } else {
-                                  setTrademarkTextColor("black");
-                                }
+                              // Set trademark text color
+                              if (od.trademark_text_color) {
+                                setTrademarkTextColor(od.trademark_text_color);
+                              } else if (od.trademark_text) {
+                                const textColor = (template as any).text_color || od.text_color;
+                                setTrademarkTextColor(textColor?.toLowerCase() === "#ffffff" ? "white" : "black");
                               }
                               
-                              // Load canvas JSON
+                              // Update background color
+                              fabricCanvas.backgroundColor = od.wristband_color || template.wristband_color;
+                              
+                              // Load canvas JSON with all objects (logos, text, etc.)
                               await new Promise<void>((resolve) => {
                                 fabricCanvas.loadFromJSON(match.canvasJson, () => {
+                                  // After loading, make sure text objects are editable
+                                  fabricCanvas.getObjects().forEach(obj => {
+                                    if (obj.type === 'i-text' || obj.type === 'text') {
+                                      obj.set({
+                                        editable: true,
+                                        selectable: true,
+                                        evented: true,
+                                      });
+                                    }
+                                  });
+                                  
                                   fabricCanvas.renderAll();
-                                  const imgObj = fabricCanvas.getObjects().find(o => (o as any).type === 'image') as FabricImage | undefined;
+                                  
+                                  // Find and set uploaded image reference
+                                  const imgObj = fabricCanvas.getObjects().find(o => 
+                                    o.type === 'image' && (o as any).selectable !== false
+                                  ) as FabricImage | undefined;
                                   if (imgObj) setUploadedImage(imgObj as any);
+                                  
                                   resolve();
                                 });
                               });
                               
                               restored = true;
+                              toast.success("Template loaded with all elements!");
                             }
                           }
                           
-                          // If no localStorage data, restore basic settings from database
+                          // Fallback: restore basic settings from database if no localStorage
                           if (!restored) {
                             setWristbandColor(template.wristband_color);
                             setWristbandType(template.wristband_type as WristbandType);
+                            fabricCanvas.backgroundColor = template.wristband_color;
                             
                             const customTextFromTemplate = (template as any).custom_text;
                             const textColorFromTemplate = (template as any).text_color;
@@ -780,17 +819,12 @@ const DesignStudio = () => {
                             if (customTextFromTemplate) {
                               setTrademarkText(customTextFromTemplate);
                               setHasTrademark(true);
-                              if (textColorFromTemplate?.toLowerCase() === "#ffffff") {
-                                setTrademarkTextColor("white");
-                              } else {
-                                setTrademarkTextColor("black");
-                              }
+                              setTrademarkTextColor(textColorFromTemplate?.toLowerCase() === "#ffffff" ? "white" : "black");
                             }
+                            
+                            fabricCanvas.renderAll();
+                            toast.info("Template loaded (basic settings only)");
                           }
-                          
-                          fabricCanvas.backgroundColor = template.wristband_color;
-                          fabricCanvas.renderAll();
-                          toast.success("Template loaded successfully");
                         } catch (e) {
                           console.error("Failed to load template:", e);
                           toast.error("Failed to load template");
@@ -827,8 +861,9 @@ const DesignStudio = () => {
                 <Label>Quantity (Min 1000 pcs)</Label>
                 <Input type="number" min="1000" step="100" value={quantity} onChange={(e) => setQuantity(Math.max(1000, parseInt(e.target.value) || 1000))} className="mt-2" />
                 <Button
-                  variant="outline"
+                  variant="default"
                   size="sm"
+                  className="w-full mt-2"
                 onClick={async () => {
                   if (!fabricCanvas || !pricing) {
                     toast.error("Please create a design first");
@@ -853,7 +888,7 @@ const DesignStudio = () => {
 
                     const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
                     
-                    // Save to database
+                    // Save to database with full canvas data
                     await supabase.from("designs").insert({
                       user_id: session.user.id,
                       design_url: publicUrl,
@@ -863,7 +898,7 @@ const DesignStudio = () => {
                       text_color: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
                     });
 
-                    // Add to localStorage cart
+                    // Add to localStorage cart with all data
                     const cartRaw = localStorage.getItem("cart_designs");
                     const cart = cartRaw ? JSON.parse(cartRaw) : [];
                     const cartItem = {
@@ -874,10 +909,13 @@ const DesignStudio = () => {
                         unit_price: pricing.unitPrice,
                         currency,
                         wristband_type: wristbandType,
+                        wristband_color: wristbandColor,
                         print_type: printType,
                         has_trademark: hasTrademark,
                         trademark_text: trademarkText,
+                        trademark_text_color: trademarkTextColor,
                         has_qr_code: hasQrCode,
+                        has_print: hasPrint,
                       },
                       canvasJson: fabricCanvas.toJSON(),
                       created_at: new Date().toISOString(),
@@ -885,23 +923,37 @@ const DesignStudio = () => {
                     cart.push(cartItem);
                     localStorage.setItem("cart_designs", JSON.stringify(cart));
                     
-                    toast.success("Design added to cart!");
-                    
-                    // Reload templates and open new design tab
+                    // Reload templates
                     await loadTemplates();
-                    localStorage.setItem("open_new_design", "true");
-                    window.open("/", "_blank");
+                    
+                    // Clear canvas for new design
+                    const objects = fabricCanvas.getObjects().filter(obj => obj.selectable !== false && obj.evented !== false);
+                    fabricCanvas.remove(...objects);
+                    setUploadedImage(null);
+                    setWristbandColor("#FFFFFF");
+                    setWristbandType("tyvek");
+                    setQuantity(1000);
+                    setPrintType("none");
+                    setHasPrint(false);
+                    setHasTrademark(false);
+                    setTrademarkText("");
+                    setTrademarkTextColor("black");
+                    setHasQrCode(false);
+                    setPricing(null);
+                    fabricCanvas.backgroundColor = "#FFFFFF";
+                    fabricCanvas.renderAll();
+                    
+                    toast.success("Design added to cart! Create another design or proceed to checkout");
                   } catch (error: any) {
                     console.error("Failed to add to cart:", error);
                     toast.error("Failed to add design to cart");
                   }
                 }}
-                  className="w-full mt-2"
                 >
                   <Plus className="h-4 w-4 mr-2" />
                   Add to Cart & New Design
                 </Button>
-                <p className="text-xs text-muted-foreground mt-1">Saves current design to cart and opens new tab for additional designs</p>
+                <p className="text-xs text-muted-foreground mt-1">Saves current design and clears canvas for new design</p>
               </div>
               <div>
                 <Label>Wristband Type</Label>
