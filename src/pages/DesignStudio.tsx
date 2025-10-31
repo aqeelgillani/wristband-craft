@@ -471,44 +471,45 @@ const DesignStudio = () => {
         throw designError;
       }
 
-    try {
-  toast.success("Template saved successfully");
-
-  const cartRaw = localStorage.getItem("cart_designs");
-  const cart = cartRaw ? JSON.parse(cartRaw) : [];
-
-  const cartItem = {
-    designUrl: publicUrl,
-    orderDetails: {
-      quantity,
-      total_price: pricing?.totalPrice || 0,
-      unit_price: pricing?.unitPrice || 0,
-      currency,
-      wristband_type: wristbandType,
-      wristband_color: wristbandColor,
-      print_type: printType,
-      has_trademark: hasTrademark,
-      trademark_text: trademarkText,
-      trademark_text_color: trademarkTextColor,
-      has_qr_code: hasQrCode,
-      has_print: hasPrint,
-    },
-    canvasJson: jsonPayload.canvas,
-    created_at: new Date().toISOString(),
+      toast.success("Template saved successfully");
+      // Save to localStorage cart (designs created in this browser)
+      try {
+        const cartRaw = localStorage.getItem("cart_designs");
+        const cart = cartRaw ? JSON.parse(cartRaw) : [];
+        const cartItem = {
+          designUrl: publicUrl,
+          orderDetails: {
+            quantity,
+            total_price: pricing?.totalPrice || 0,
+            unit_price: pricing?.unitPrice || 0,
+            currency,
+            wristband_type: wristbandType,
+            wristband_color: wristbandColor,
+            print_type: printType,
+            has_trademark: hasTrademark,
+            trademark_text: trademarkText,
+            trademark_text_color: trademarkTextColor,
+            has_qr_code: hasQrCode,
+            has_print: hasPrint,
+          },
+          // Persist canvas JSON so the template can be reloaded/edited in-browser
+          canvasJson: jsonPayload.canvas,
+          created_at: new Date().toISOString(),
+        };
+        cart.push(cartItem);
+        localStorage.setItem("cart_designs", JSON.stringify(cart));
+        await loadTemplates();
+      } catch (e) {
+        console.error("Failed to save design to localStorage", e);
+      }
+    
+    } catch (error: any) {
+      console.error("Save template error:", error);
+      toast.error(error.message || "Failed to save template");
+    } finally {
+      setSaving(false);
+    }
   };
-
-  cart.push(cartItem);
-  localStorage.setItem("cart_designs", JSON.stringify(cart));
-
-  await loadTemplates(); // await ensures templates refresh before finishing
-
-} catch (error: any) {
-  console.error("Save template error:", error);
-  toast.error(error.message || "Failed to save template");
-} finally {
-  setSaving(false);
-}
-
 
   const handleDeleteTemplate = async (id: string) => {
     try {
