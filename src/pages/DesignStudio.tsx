@@ -229,8 +229,8 @@ const DesignStudio = () => {
     // Add new trademark text if enabled (vertical, positioned at left: 85, no transformation)
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 85, // Right after QR space
-        top: 50,
+        left: 90, // Right after QR space
+        top: 90,
         fontSize: 10,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
         fontFamily: "Arial",
@@ -243,7 +243,7 @@ const DesignStudio = () => {
         lockRotation: true,
         lockScalingX: true,
         lockScalingY: true,
-        selectable: false, // No transformation allowed
+        selectable: true, // No transformation allowed
         evented: false,
       });
 
