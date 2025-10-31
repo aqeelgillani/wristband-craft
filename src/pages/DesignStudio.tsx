@@ -429,6 +429,32 @@ const DesignStudio = () => {
       if (uploadError) throw uploadError;
 
       const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
+
+      // Also upload a JSON snapshot with full canvas + order details so templates fully restore across tabs/devices
+      const jsonName = fileName.replace('.png', '.json');
+      const jsonPayload = {
+        canvas: fabricCanvas.toJSON(),
+        orderDetails: {
+          quantity,
+          total_price: pricing?.totalPrice || 0,
+          unit_price: pricing?.unitPrice || 0,
+          currency,
+          wristband_type: wristbandType,
+          wristband_color: wristbandColor,
+          print_type: printType,
+          has_trademark: hasTrademark,
+          trademark_text: trademarkText,
+          trademark_text_color: trademarkTextColor,
+          has_qr_code: hasQrCode,
+          has_print: hasPrint,
+        },
+        saved_at: new Date().toISOString(),
+      };
+      const jsonBlob = new Blob([JSON.stringify(jsonPayload)], { type: 'application/json' });
+      const { error: jsonUploadError } = await supabase.storage
+        .from("wristband-designs")
+        .upload(jsonName, jsonBlob, { contentType: 'application/json', upsert: true });
+      if (jsonUploadError) console.warn('Template JSON upload warning:', jsonUploadError.message);
       
       const { data, error: designError } = await supabase.from("designs").insert({
         user_id: session.user.id,
@@ -458,13 +484,16 @@ const DesignStudio = () => {
             unit_price: pricing?.unitPrice || 0,
             currency,
             wristband_type: wristbandType,
+            wristband_color: wristbandColor,
             print_type: printType,
             has_trademark: hasTrademark,
             trademark_text: trademarkText,
+            trademark_text_color: trademarkTextColor,
             has_qr_code: hasQrCode,
+            has_print: hasPrint,
           },
           // Persist canvas JSON so the template can be reloaded/edited in-browser
-          canvasJson: fabricCanvas.toJSON(),
+          canvasJson: jsonPayload.canvas,
           created_at: new Date().toISOString(),
         };
         cart.push(cartItem);
@@ -816,23 +845,68 @@ const DesignStudio = () => {
                             }
                           }
                           
-                          // Fallback: restore basic settings from database if no localStorage
+                          // Fallback: try to restore from JSON snapshot stored next to the image
                           if (!restored) {
-                            setWristbandColor(template.wristband_color);
-                            setWristbandType(template.wristband_type as WristbandType);
-                            fabricCanvas.backgroundColor = template.wristband_color;
-                            
-                            const customTextFromTemplate = (template as any).custom_text;
-                            const textColorFromTemplate = (template as any).text_color;
-                            
-                            if (customTextFromTemplate) {
-                              setTrademarkText(customTextFromTemplate);
-                              setHasTrademark(true);
-                              setTrademarkTextColor(textColorFromTemplate?.toLowerCase() === "#ffffff" ? "white" : "black");
+                            try {
+                              const jsonUrl = template.design_url.replace(/\.png(\?.*)?$/, '.json');
+                              const resp = await fetch(jsonUrl);
+                              if (resp.ok) {
+                                const payload = await resp.json();
+                                const od = payload.orderDetails || {};
+
+                                // Restore settings
+                                setWristbandColor(od.wristband_color || template.wristband_color);
+                                setWristbandType((od.wristband_type || template.wristband_type) as WristbandType);
+                                setQuantity(od.quantity || 1000);
+                                setPrintType(od.print_type || 'none');
+                                setHasPrint(od.has_print ?? (od.print_type !== 'none'));
+                                setHasTrademark(od.has_trademark || false);
+                                setTrademarkText(od.trademark_text || '');
+                                setTrademarkTextColor((od.trademark_text_color === 'white' || od.trademark_text_color === 'black') ? od.trademark_text_color : 'black');
+                                setHasQrCode(od.has_qr_code || false);
+
+                                fabricCanvas.backgroundColor = od.wristband_color || template.wristband_color;
+
+                                await new Promise<void>((resolve) => {
+                                  fabricCanvas.loadFromJSON(payload.canvas || payload, () => {
+                                    fabricCanvas.getObjects().forEach(obj => {
+                                      if (obj.type === 'i-text' || obj.type === 'text') {
+                                        obj.set({ editable: true, selectable: true, evented: true });
+                                      } else if (obj.type === 'image') {
+                                        if ((obj as any).selectable !== false) {
+                                          obj.set({ selectable: true, evented: true });
+                                        }
+                                      }
+                                    });
+                                    fabricCanvas.renderAll();
+                                    resolve();
+                                  });
+                                });
+
+                                restored = true;
+                                toast.success('Template loaded with all elements!');
+                              }
+                            } catch (err) {
+                              console.warn('No JSON snapshot found for template, loading basic settings.', err);
                             }
-                            
-                            fabricCanvas.renderAll();
-                            toast.info("Template loaded (basic settings only)");
+
+                            if (!restored) {
+                              // Final fallback: basic settings only
+                              setWristbandColor(template.wristband_color);
+                              setWristbandType(template.wristband_type as WristbandType);
+                              fabricCanvas.backgroundColor = template.wristband_color;
+
+                              const customTextFromTemplate = (template as any).custom_text;
+                              const textColorFromTemplate = (template as any).text_color;
+                              if (customTextFromTemplate) {
+                                setTrademarkText(customTextFromTemplate);
+                                setHasTrademark(true);
+                                setTrademarkTextColor(textColorFromTemplate?.toLowerCase() === '#ffffff' ? 'white' : 'black');
+                              }
+
+                              fabricCanvas.renderAll();
+                              toast.info('Template loaded (basic settings only)');
+                            }
                           }
                         } catch (e) {
                           console.error("Failed to load template:", e);
@@ -1088,6 +1162,32 @@ const DesignStudio = () => {
 
                       const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
                       
+                      // Also upload JSON snapshot for full restore
+                      const jsonName = fileName.replace('.png', '.json');
+                      const jsonPayload = {
+                        canvas: fabricCanvas.toJSON(),
+                        orderDetails: {
+                          quantity,
+                          total_price: pricing.totalPrice,
+                          unit_price: pricing.unitPrice,
+                          currency,
+                          wristband_type: wristbandType,
+                          wristband_color: wristbandColor,
+                          print_type: printType,
+                          has_trademark: hasTrademark,
+                          trademark_text: trademarkText,
+                          trademark_text_color: trademarkTextColor,
+                          has_qr_code: hasQrCode,
+                          has_print: hasPrint,
+                        },
+                        saved_at: new Date().toISOString(),
+                      };
+                      const jsonBlob = new Blob([JSON.stringify(jsonPayload)], { type: 'application/json' });
+                      const { error: jsonUploadError } = await supabase.storage
+                        .from("wristband-designs")
+                        .upload(jsonName, jsonBlob, { contentType: 'application/json', upsert: true });
+                      if (jsonUploadError) console.warn('Template JSON upload warning:', jsonUploadError.message);
+                      
                       // Save to database
                       await supabase.from("designs").insert({
                         user_id: session.user.id,
@@ -1103,21 +1203,8 @@ const DesignStudio = () => {
                       const cart = cartRaw ? JSON.parse(cartRaw) : [];
                       const cartItem = {
                         designUrl: publicUrl,
-                        orderDetails: {
-                          quantity,
-                          total_price: pricing.totalPrice,
-                          unit_price: pricing.unitPrice,
-                          currency,
-                          wristband_type: wristbandType,
-                          wristband_color: wristbandColor,
-                          print_type: printType,
-                          has_trademark: hasTrademark,
-                          trademark_text: trademarkText,
-                          trademark_text_color: trademarkTextColor,
-                          has_qr_code: hasQrCode,
-                          has_print: hasPrint,
-                        },
-                        canvasJson: fabricCanvas.toJSON(),
+                        orderDetails: jsonPayload.orderDetails,
+                        canvasJson: jsonPayload.canvas,
                         created_at: new Date().toISOString(),
                       };
                       cart.push(cartItem);
