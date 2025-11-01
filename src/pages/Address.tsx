@@ -147,9 +147,10 @@ const Address = () => {
         console.warn("Failed to update stripe session id", e);
       }
 
-      window.open(checkoutData.url, "_blank");
-      toast.success("Redirecting to checkout...");
-      setTimeout(() => navigate("/my-orders"), 2000);
+      // Redirect to Stripe checkout in the same window
+      // After payment completion, Stripe will redirect back to /my-orders
+      toast.success("Redirecting to payment...");
+      window.location.href = checkoutData.url;
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "An error occurred while processing order");
