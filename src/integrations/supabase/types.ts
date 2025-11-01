@@ -71,12 +71,14 @@ export type Database = {
           extra_charges: Json | null
           has_secure_guests: boolean | null
           id: string
+          payment_status: string | null
           print_type: string | null
           quantity: number
           shipping_address: Json | null
           status: string
           stripe_payment_intent_id: string | null
           stripe_session_id: string | null
+          supplier_id: string | null
           total_price: number
           unit_price: number | null
           user_id: string
@@ -90,12 +92,14 @@ export type Database = {
           extra_charges?: Json | null
           has_secure_guests?: boolean | null
           id?: string
+          payment_status?: string | null
           print_type?: string | null
           quantity?: number
           shipping_address?: Json | null
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
+          supplier_id?: string | null
           total_price?: number
           unit_price?: number | null
           user_id: string
@@ -109,12 +113,14 @@ export type Database = {
           extra_charges?: Json | null
           has_secure_guests?: boolean | null
           id?: string
+          payment_status?: string | null
           print_type?: string | null
           quantity?: number
           shipping_address?: Json | null
           status?: string
           stripe_payment_intent_id?: string | null
           stripe_session_id?: string | null
+          supplier_id?: string | null
           total_price?: number
           unit_price?: number | null
           user_id?: string
@@ -125,6 +131,13 @@ export type Database = {
             columns: ["design_id"]
             isOneToOne: false
             referencedRelation: "designs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_supplier_id_fkey"
+            columns: ["supplier_id"]
+            isOneToOne: false
+            referencedRelation: "suppliers"
             referencedColumns: ["id"]
           },
           {
@@ -217,6 +230,39 @@ export type Database = {
         }
         Relationships: []
       }
+      suppliers: {
+        Row: {
+          address: string | null
+          company_name: string
+          contact_email: string
+          contact_phone: string | null
+          created_at: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address?: string | null
+          company_name: string
+          contact_email: string
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address?: string | null
+          company_name?: string
+          contact_email?: string
+          contact_phone?: string | null
+          created_at?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -252,7 +298,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "user"
+      app_role: "admin" | "user" | "supplier"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -380,7 +426,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user"],
+      app_role: ["admin", "user", "supplier"],
     },
   },
 } as const
