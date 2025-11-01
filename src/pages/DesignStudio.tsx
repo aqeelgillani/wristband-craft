@@ -141,6 +141,9 @@ const DesignStudio = () => {
   }, []);
 
   useEffect(() => {
+    // Skip if we're loading a template (template will set its own background)
+    if (isLoadingTemplateRef.current) return;
+    
     if (fabricCanvas) {
       fabricCanvas.backgroundColor = wristbandColor;
       fabricCanvas.renderAll();
@@ -913,7 +916,10 @@ const DesignStudio = () => {
                           console.error("Failed to load template:", e);
                           toast.error("Failed to load template");
                         } finally {
-                          isLoadingTemplateRef.current = false;
+                          // Reset flag after a delay to ensure all effects have completed
+                          setTimeout(() => {
+                            isLoadingTemplateRef.current = false;
+                          }, 100);
                         }
                       }}
                     >

@@ -42,20 +42,30 @@ serve(async (req) => {
     // 🧩 Step 3: Fetch order details
     const { data: order, error: orderError } = await supabaseClient
       .from("orders")
-      .select(
-        `
-        *,
-        designs (
-          wristband_type
-        )
-      `
-      )
+      .select("*")
       .eq("id", orderId)
       .single();
 
     if (orderError || !order) {
       console.error("Order lookup failed:", orderError);
       throw new Error("Order not found");
+    }
+
+    // Optionally fetch design details if design_id exists
+    let wristbandType = "silicone";
+    if (order.design_id) {
+      try {
+        const { data: design } = await supabaseClient
+          .from("designs")
+          .select("wristband_type")
+          .eq("id", order.design_id)
+          .single();
+        if (design) {
+          wristbandType = design.wristband_type;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch design details, using default");
+      }
     }
 
     const totalAmount = Math.round(order.total_price * 100); // convert to cents
@@ -80,7 +90,6 @@ serve(async (req) => {
     }
 
     // 🧩 Step 6: Build product description
-    const wristbandType = order.designs?.wristband_type || "silicone";
     let description = `Custom ${wristbandType} wristband`;
     if (order.print_type && order.print_type !== "none") {
       description += ` with ${

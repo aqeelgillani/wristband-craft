@@ -46,11 +46,62 @@ const Address = () => {
 
     setLoading(true);
     try {
-      // For each design that has an orderId, update the order with shipping address and express fee in extra_charges
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error("Please sign in");
+        navigate("/auth");
+        setLoading(false);
+        return;
+      }
+
+      // For each design, ensure order exists in database, then update with shipping
       let firstOrderId: string | null = null;
+      
       for (const d of state.designs) {
-        const orderId = d.orderId || d.order_id || null;
-        if (!orderId) continue;
+        let orderId = d.orderId || d.order_id || null;
+        
+        // If no orderId exists, create order in database now
+        if (!orderId) {
+          try {
+            // First, upload the design if not already uploaded
+            let designUrl = d.designUrl;
+            let designId = d.design_id || null;
+            
+            if (!designId) {
+              // Create design record
+              const { data: designData, error: designError } = await supabase.from("designs").insert({
+                user_id: session.user.id,
+                design_url: designUrl,
+                wristband_color: d.orderDetails?.wristband_color || "#FFFFFF",
+                wristband_type: d.orderDetails?.wristband_type || "tyvek",
+              }).select().single();
+              
+              if (designError) throw designError;
+              designId = designData.id;
+            }
+            
+            // Create order record
+            const { data: orderData, error: orderError } = await supabase.from("orders").insert({
+              user_id: session.user.id,
+              design_id: designId,
+              quantity: d.orderDetails?.quantity || 1000,
+              total_price: d.orderDetails?.total_price || 0,
+              unit_price: d.orderDetails?.unit_price || 0,
+              base_price: d.orderDetails?.base_price || 0,
+              currency: d.orderDetails?.currency || "EUR",
+              print_type: d.orderDetails?.print_type || "none",
+              extra_charges: d.orderDetails?.extra_charges || {},
+              status: "pending",
+              has_secure_guests: d.orderDetails?.has_qr_code || false,
+            }).select().single();
+            
+            if (orderError) throw orderError;
+            orderId = orderData.id;
+          } catch (err: any) {
+            console.error("Failed to create order for design", err);
+            throw new Error("Failed to create order: " + err.message);
+          }
+        }
 
         if (!firstOrderId) firstOrderId = orderId;
 
