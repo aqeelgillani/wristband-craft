@@ -11,6 +11,8 @@ import MyDesigns from "./pages/MyDesigns";
 import MyOrders from "./pages/MyOrders";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminPasswordReset from "./pages/AdminPasswordReset";
+import SupplierLogin from "./pages/SupplierLogin";
+import PaymentSuccess from "./pages/PaymentSuccess";
 import OrderSummary from "./pages/OrderSummary";
 import Address from "./pages/Address";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -27,6 +29,8 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/supplier-login" element={<SupplierLogin />} />
+          <Route path="/payment-success" element={<PaymentSuccess />} />
           <Route
             path="/dashboard"
             element={

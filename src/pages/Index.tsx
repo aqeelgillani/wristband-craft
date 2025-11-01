@@ -34,6 +34,9 @@ const Index = () => {
             EU Wristbands
           </h1>
           <div className="flex gap-3">
+            <Button variant="ghost" onClick={() => navigate("/supplier-login")}>
+              Supplier Login
+            </Button>
             <Button variant="ghost" onClick={() => navigate("/auth")}>
               Sign In
             </Button>

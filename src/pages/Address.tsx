@@ -13,6 +13,11 @@ interface LocationState {
   expressDelivery?: boolean;
 }
 
+interface Supplier {
+  id: string;
+  company_name: string;
+}
+
 const Address = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -28,6 +33,26 @@ const Address = () => {
     phone: "",
   });
   const [loading, setLoading] = useState(false);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
+
+  useEffect(() => {
+    fetchSuppliers();
+  }, []);
+
+  const fetchSuppliers = async () => {
+    const { data, error } = await supabase
+      .from("suppliers")
+      .select("id, company_name")
+      .order("company_name");
+    
+    if (!error && data) {
+      setSuppliers(data);
+      if (data.length > 0) {
+        setSelectedSupplierId(data[0].id);
+      }
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setShippingAddress({ ...shippingAddress, [e.target.name]: e.target.value });
@@ -36,6 +61,11 @@ const Address = () => {
   const handleSubmit = async () => {
     if (!shippingAddress.name || !shippingAddress.address || !shippingAddress.city || !shippingAddress.zipCode || !shippingAddress.country) {
       toast.error("Please fill required address fields");
+      return;
+    }
+
+    if (!selectedSupplierId) {
+      toast.error("Please select a supplier");
       return;
     }
 
@@ -84,6 +114,7 @@ const Address = () => {
             const { data: orderData, error: orderError } = await supabase.from("orders").insert({
               user_id: session.user.id,
               design_id: designId,
+              supplier_id: selectedSupplierId,
               quantity: d.orderDetails?.quantity || 1000,
               total_price: d.orderDetails?.total_price || 0,
               unit_price: d.orderDetails?.unit_price || 0,
@@ -92,6 +123,7 @@ const Address = () => {
               print_type: d.orderDetails?.print_type || "none",
               extra_charges: d.orderDetails?.extra_charges || {},
               status: "pending",
+              payment_status: "pending",
               has_secure_guests: d.orderDetails?.has_qr_code || false,
             }).select().single();
             
@@ -283,7 +315,24 @@ const Address = () => {
               <Input id="phone" name="phone" value={shippingAddress.phone} onChange={handleInputChange} className="mt-2" />
             </div>
 
-            <Button onClick={handleSubmit} className="w-full mt-4" variant="hero">
+            <div>
+              <Label htmlFor="supplier">Select Supplier *</Label>
+              <select
+                id="supplier"
+                value={selectedSupplierId}
+                onChange={(e) => setSelectedSupplierId(e.target.value)}
+                className="w-full mt-2 px-3 py-2 border rounded-md bg-background"
+              >
+                <option value="">Choose a supplier...</option>
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.company_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <Button onClick={handleSubmit} className="w-full mt-4" variant="hero" disabled={!selectedSupplierId}>
               {loading ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processing...

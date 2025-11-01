@@ -14,6 +14,8 @@ interface Order {
   total_price: number;
   unit_price: number;
   status: string;
+  payment_status: string;
+  stripe_payment_intent_id: string | null;
   created_at: string;
   profiles: {
     email: string;
@@ -23,6 +25,9 @@ interface Order {
     wristband_type: string;
     custom_text: string | null;
   } | null;
+  suppliers: {
+    company_name: string;
+  } | null;
 }
 
 const AdminDashboard = () => {
@@ -30,10 +35,13 @@ const AdminDashboard = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSupplier, setIsSupplier] = useState(false);
+  const [supplierId, setSupplierId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalOrders: 0,
     totalRevenue: 0,
     pendingOrders: 0,
+    paidOrders: 0,
   });
 
   useEffect(() => {
@@ -48,30 +56,49 @@ const AdminDashboard = () => {
         return;
       }
 
-      // Check if user has admin role
+      // Check if user has admin or supplier role
       const { data: roles, error: roleError } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", session.user.id)
-        .eq("role", "admin")
-        .maybeSingle();
+        .eq("user_id", session.user.id);
 
-      if (roleError || !roles) {
-        // toast.error("Access denied - Admin only");
-        navigate("/admin");
+      if (roleError || !roles || roles.length === 0) {
+        toast.error("Access denied - Admin or Supplier only");
+        navigate("/");
         return;
       }
 
-      setIsAdmin(true);
-      fetchOrders();
+      const hasAdminRole = roles.some(r => r.role === "admin");
+      const hasSupplierRole = roles.some(r => r.role === "supplier");
+
+      if (hasAdminRole) {
+        setIsAdmin(true);
+        fetchOrders();
+      } else if (hasSupplierRole) {
+        setIsSupplier(true);
+        // Get supplier ID
+        const { data: supplier } = await supabase
+          .from("suppliers")
+          .select("id")
+          .eq("user_id", session.user.id)
+          .single();
+        
+        if (supplier) {
+          setSupplierId(supplier.id);
+          fetchOrders(supplier.id);
+        }
+      } else {
+        toast.error("Access denied - Admin or Supplier only");
+        navigate("/");
+      }
     } catch (error) {
-      navigate("/admin");
+      navigate("/");
     }
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (filterSupplierId?: string) => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("orders")
         .select(`
           *,
@@ -80,9 +107,17 @@ const AdminDashboard = () => {
             design_url,
             wristband_type,
             custom_text
-          )
+          ),
+          suppliers (company_name)
         `)
         .order("created_at", { ascending: false });
+
+      // Filter by supplier if not admin
+      if (filterSupplierId) {
+        query = query.eq("supplier_id", filterSupplierId);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         toast.error("Failed to load orders");
@@ -94,11 +129,13 @@ const AdminDashboard = () => {
       // Calculate stats
       const totalRevenue = data?.reduce((sum, order) => sum + Number(order.total_price), 0) || 0;
       const pendingOrders = data?.filter(order => order.status === "pending").length || 0;
+      const paidOrders = data?.filter(order => order.payment_status === "paid").length || 0;
       
       setStats({
         totalOrders: data?.length || 0,
         totalRevenue,
         pendingOrders,
+        paidOrders,
       });
     } catch (error) {
       toast.error("An error occurred");
@@ -130,7 +167,7 @@ const AdminDashboard = () => {
         toast.success(`Order status updated to ${newStatus}`);
       }
 
-      fetchOrders();
+      fetchOrders(supplierId || undefined);
     } catch (error: any) {
       toast.error(error.message || "Failed to update order status");
     }
@@ -140,6 +177,8 @@ const AdminDashboard = () => {
     switch (status) {
       case "pending":
         return "bg-yellow-500";
+      case "approved":
+        return "bg-green-500";
       case "processing":
         return "bg-blue-500";
       case "completed":
@@ -151,7 +190,20 @@ const AdminDashboard = () => {
     }
   };
 
-  if (!isAdmin) return null;
+  const getPaymentStatusColor = (status: string) => {
+    switch (status) {
+      case "paid":
+        return "bg-green-500";
+      case "pending":
+        return "bg-yellow-500";
+      case "failed":
+        return "bg-red-500";
+      default:
+        return "bg-gray-500";
+    }
+  };
+
+  if (!isAdmin && !isSupplier) return null;
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
@@ -162,7 +214,7 @@ const AdminDashboard = () => {
             Back
           </Button>
           <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
-            Admin Dashboard
+            {isAdmin ? "Admin Dashboard" : "Supplier Dashboard"}
           </h1>
         </div>
       </header>
@@ -202,13 +254,11 @@ const AdminDashboard = () => {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium">Avg Order Value</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Paid Orders</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                ${stats.totalOrders > 0 ? (stats.totalRevenue / stats.totalOrders).toFixed(2) : "0.00"}
-              </div>
+              <div className="text-2xl font-bold">{stats.paidOrders}</div>
             </CardContent>
           </Card>
         </div>
@@ -225,7 +275,7 @@ const AdminDashboard = () => {
             {orders.map((order) => (
               <Card key={order.id} className="hover:shadow-xl transition-shadow">
                 <CardHeader>
-                  <div className="flex justify-between items-start">
+                  <div className="flex justify-between items-start flex-wrap gap-2">
                     <div>
                       <CardTitle className="text-lg">
                         Order #{order.id.slice(0, 8)}
@@ -233,23 +283,34 @@ const AdminDashboard = () => {
                       <p className="text-sm text-muted-foreground">
                         {order.profiles?.email || "Guest"}
                       </p>
+                      {order.suppliers && (
+                        <p className="text-xs text-muted-foreground">
+                          Supplier: {order.suppliers.company_name}
+                        </p>
+                      )}
                     </div>
-                    <Select
-                      value={order.status}
-                      onValueChange={(value) => handleStatusUpdate(order.id, value)}
-                    >
-                      <SelectTrigger className="w-[150px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pending">Pending</SelectItem>
-                        <SelectItem value="approved">Approve</SelectItem>
-                        <SelectItem value="declined">Decline</SelectItem>
-                        <SelectItem value="processing">Processing</SelectItem>
-                        <SelectItem value="completed">Completed</SelectItem>
-                        <SelectItem value="cancelled">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-2">
+                      <Badge className={getPaymentStatusColor(order.payment_status)}>
+                        {order.payment_status}
+                      </Badge>
+                      <Select
+                        value={order.status}
+                        onValueChange={(value) => handleStatusUpdate(order.id, value)}
+                        disabled={!isAdmin}
+                      >
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="approved">Approve</SelectItem>
+                          <SelectItem value="declined">Decline</SelectItem>
+                          <SelectItem value="processing">Processing</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

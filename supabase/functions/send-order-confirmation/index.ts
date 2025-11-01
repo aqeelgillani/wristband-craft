@@ -36,7 +36,8 @@ serve(async (req) => {
       .select(`
         *,
         profiles:user_id (email, full_name),
-        designs:design_id (design_url, wristband_type, wristband_color)
+        designs:design_id (design_url, wristband_type, wristband_color),
+        suppliers:supplier_id (company_name, contact_email)
       `)
       .eq("id", orderId)
       .single();
@@ -47,6 +48,7 @@ serve(async (req) => {
 
     const userEmail = order.profiles?.email;
     const userName = order.profiles?.full_name || "Customer";
+    const supplierName = order.suppliers?.company_name || "N/A";
     
     if (!userEmail) {
       throw new Error("User email not found");
@@ -67,11 +69,13 @@ serve(async (req) => {
         <h2 style="color: #555; margin-top: 30px;">Order Summary</h2>
         <div style="background: #f5f5f5; padding: 15px; border-radius: 8px;">
           <p><strong>Order ID:</strong> ${order.id}</p>
+          <p><strong>Supplier:</strong> ${supplierName}</p>
           <p><strong>Quantity:</strong> ${order.quantity} pieces</p>
           <p><strong>Wristband Type:</strong> ${order.designs?.wristband_type || 'N/A'}</p>
           ${order.print_type && order.print_type !== 'none' ? `<p><strong>Print Type:</strong> ${order.print_type === 'black' ? 'Black Print' : 'Full Color Print'}</p>` : ''}
           ${order.has_secure_guests ? '<p><strong>Secure Guests:</strong> Yes</p>' : ''}
           <p><strong>Total Amount:</strong> ${currencySymbol}${order.total_price.toFixed(2)}</p>
+          <p><strong>Payment Status:</strong> ${order.payment_status}</p>
         </div>
         
         ${order.shipping_address ? `
