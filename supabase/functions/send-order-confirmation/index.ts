@@ -14,12 +14,20 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const supabaseClient = createClient(
-    Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_ANON_KEY") ?? ""
-  );
-
   try {
+    const authHeader = req.headers.get("Authorization");
+    
+    // Create Supabase client with user's auth token
+    const supabaseClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      {
+        global: {
+          headers: authHeader ? { Authorization: authHeader } : {},
+        },
+      }
+    );
+
     const { orderId } = await req.json();
 
     // Get order details with user email
