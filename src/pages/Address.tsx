@@ -321,7 +321,8 @@ const Address = () => {
                 id="supplier"
                 value={selectedSupplierId}
                 onChange={(e) => setSelectedSupplierId(e.target.value)}
-                className="w-full mt-2 px-3 py-2 border rounded-md bg-background"
+                className="w-full mt-2 px-3 py-2 border rounded-md bg-card text-foreground"
+                style={{ zIndex: 50 }}
               >
                 <option value="">Choose a supplier...</option>
                 {suppliers.map((supplier) => (
@@ -330,6 +331,9 @@ const Address = () => {
                   </option>
                 ))}
               </select>
+              {suppliers.length === 0 && (
+                <p className="text-sm text-muted-foreground mt-1">Loading suppliers...</p>
+              )}
             </div>
 
             <Button onClick={handleSubmit} className="w-full mt-4" variant="hero" disabled={!selectedSupplierId}>

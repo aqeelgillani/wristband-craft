@@ -16,13 +16,18 @@ const PaymentSuccess = () => {
     const updatePaymentStatus = async () => {
       const sessionId = searchParams.get("session_id");
       
+      console.log("PaymentSuccess: session_id from URL:", sessionId);
+      
       if (!sessionId) {
+        console.error("PaymentSuccess: No session_id in URL");
         setError("No payment session found");
         setLoading(false);
         return;
       }
 
       try {
+        console.log("PaymentSuccess: Calling update-payment-status with:", sessionId);
+        
         // Call edge function to update payment status
         const { data, error: updateError } = await supabase.functions.invoke(
           "update-payment-status",
@@ -31,7 +36,10 @@ const PaymentSuccess = () => {
           }
         );
 
+        console.log("PaymentSuccess: Response from update-payment-status:", data, updateError);
+
         if (updateError) {
+          console.error("PaymentSuccess: Error from edge function:", updateError);
           throw updateError;
         }
 
