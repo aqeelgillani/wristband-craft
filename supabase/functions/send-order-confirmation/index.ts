@@ -30,6 +30,8 @@ serve(async (req) => {
 
     const { orderId } = await req.json();
 
+    console.log("Processing order confirmation email for orderId:", orderId);
+
     // Get order details with user email
     const { data: order, error: orderError } = await supabaseClient
       .from("orders")
@@ -43,6 +45,7 @@ serve(async (req) => {
       .single();
 
     if (orderError || !order) {
+      console.error("Order not found:", orderError);
       throw new Error("Order not found");
     }
 
@@ -51,8 +54,11 @@ serve(async (req) => {
     const supplierName = order.suppliers?.company_name || "N/A";
     
     if (!userEmail) {
+      console.error("User email not found for order:", orderId);
       throw new Error("User email not found");
     }
+
+    console.log("Sending confirmation email to:", userEmail);
 
     const currencySymbol = order.currency === "USD" ? "$" : order.currency === "EUR" ? "€" : "£";
     const estimatedDelivery = new Date();
@@ -60,11 +66,11 @@ serve(async (req) => {
 
     const emailHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <h1 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">Order Confirmed! 🎉</h1>
+        <h1 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">Payment Successful! 🎉</h1>
         
         <p>Dear ${userName},</p>
         
-        <p>Great news! Your custom wristband order has been approved and is now being processed.</p>
+        <p>Thank you for your payment! Your custom wristband order has been confirmed and is now being processed.</p>
         
         <h2 style="color: #555; margin-top: 30px;">Order Summary</h2>
         <div style="background: #f5f5f5; padding: 15px; border-radius: 8px;">
@@ -75,7 +81,7 @@ serve(async (req) => {
           ${order.print_type && order.print_type !== 'none' ? `<p><strong>Print Type:</strong> ${order.print_type === 'black' ? 'Black Print' : 'Full Color Print'}</p>` : ''}
           ${order.has_secure_guests ? '<p><strong>Secure Guests:</strong> Yes</p>' : ''}
           <p><strong>Total Amount:</strong> ${currencySymbol}${order.total_price.toFixed(2)}</p>
-          <p><strong>Payment Status:</strong> ${order.payment_status}</p>
+          <p><strong>Payment Status:</strong> <span style="color: #4CAF50; font-weight: bold;">${order.payment_status}</span></p>
         </div>
         
         ${order.shipping_address ? `
@@ -109,7 +115,7 @@ serve(async (req) => {
     const { error: emailError } = await resend.emails.send({
       from: "EU Wristbands <onboarding@resend.dev>",
       to: [userEmail],
-      subject: `Order Confirmed - ${order.quantity} Custom Wristbands`,
+      subject: `Payment Successful - Order #${order.id.substring(0, 8)}`,
       html: emailHtml,
     });
 
@@ -118,7 +124,7 @@ serve(async (req) => {
       throw emailError;
     }
 
-    console.log(`Order confirmation email sent to ${userEmail} for order ${orderId}`);
+    console.log(`Order confirmation email sent successfully to ${userEmail} for order ${orderId}`);
 
     return new Response(
       JSON.stringify({ success: true, message: "Email sent successfully" }),
