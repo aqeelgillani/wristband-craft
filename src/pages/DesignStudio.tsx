@@ -59,6 +59,7 @@ const DesignStudio = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const editDesignState = (location.state as any)?.editDesign;
+  const editIndex = (location.state as any)?.editIndex; // Track which design we're editing
   
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const isLoadingTemplateRef = useRef(false);
@@ -577,7 +578,16 @@ const DesignStudio = () => {
           canvasJson: jsonPayload.canvas,
           created_at: new Date().toISOString(),
         };
-        cart.push(cartItem);
+        
+        // If we're editing an existing design, update it; otherwise add new
+        if (editIndex !== undefined && editIndex >= 0 && editIndex < cart.length) {
+          cart[editIndex] = cartItem;
+          toast.success("Design updated in cart!");
+        } else {
+          cart.push(cartItem);
+          toast.success("Design added to cart!");
+        }
+        
         localStorage.setItem("cart_designs", JSON.stringify(cart));
         await loadTemplates();
       } catch (e) {

@@ -59,10 +59,10 @@ const OrderSummary = () => {
     setViewDialogOpen(true);
   };
 
-  const handleEditDesign = (design: any) => {
-    // Navigate to design studio with the design data to restore it
+  const handleEditDesign = (design: any, designIndex: number) => {
+    // Navigate to design studio with the design data and index to restore it
     navigate("/design-studio", {
-      state: { editDesign: design }
+      state: { editDesign: design, editIndex: designIndex }
     });
   };
 
@@ -194,7 +194,7 @@ const OrderSummary = () => {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleEditDesign(d)}
+                              onClick={() => handleEditDesign(d, idx)}
                               className="text-primary hover:text-primary hover:bg-primary/10"
                             >
                               <Edit className="h-4 w-4" />
