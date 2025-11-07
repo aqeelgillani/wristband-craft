@@ -45,6 +45,30 @@ const PaymentSuccess = () => {
 
         if (data?.paymentStatus === "paid") {
           toast.success("Payment successful! Your order has been confirmed.");
+          
+          // Send confirmation email using the orderId
+          if (data?.orderId) {
+            console.log("Sending confirmation email for order:", data.orderId);
+            
+            // Send confirmation email
+            const { error: emailError } = await supabase.functions.invoke(
+              "send-order-confirmation",
+              {
+                body: {
+                  orderId: data.orderId,
+                },
+              }
+            );
+
+            if (emailError) {
+              console.error("Error sending confirmation email:", emailError);
+              // Don't throw error, just log it - payment was still successful
+            } else {
+              console.log("Confirmation email sent successfully");
+            }
+          } else {
+            console.warn("No orderId found in payment data, skipping email");
+          }
         }
         
         setLoading(false);
