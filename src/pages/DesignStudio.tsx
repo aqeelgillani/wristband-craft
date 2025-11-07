@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,6 +57,9 @@ interface SavedTemplate {
 
 const DesignStudio = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const editDesignState = (location.state as any)?.editDesign;
+  
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const isLoadingTemplateRef = useRef(false);
   const [fabricCanvas, setFabricCanvas] = useState<FabricCanvas | null>(null);
@@ -139,6 +142,80 @@ const DesignStudio = () => {
       canvas.dispose();
     };
   }, []);
+
+  // Load design from edit mode (if navigated from order summary)
+  useEffect(() => {
+    if (!fabricCanvas || !editDesignState) return;
+    
+    const loadEditDesign = async () => {
+      isLoadingTemplateRef.current = true;
+      
+      try {
+        const od = editDesignState.orderDetails;
+        
+        // Restore ALL settings
+        setWristbandColor(od.wristband_color || "#FFFFFF");
+        setWristbandType((od.wristband_type || "tyvek") as WristbandType);
+        setQuantity(od.quantity || 1000);
+        setPrintType(od.print_type || "none");
+        setHasPrint(od.has_print !== undefined ? od.has_print : (od.print_type !== "none"));
+        setHasTrademark(od.has_trademark || false);
+        setTrademarkText(od.trademark_text || "");
+        setTrademarkTextColor(od.trademark_text_color === "white" ? "white" : "black");
+        setHasQrCode(od.has_qr_code || false);
+        
+        // Update background color
+        fabricCanvas.backgroundColor = od.wristband_color || "#FFFFFF";
+        
+        // Load canvas JSON with all objects (logos, text, etc.)
+        if (editDesignState.canvasJson) {
+          await new Promise<void>((resolve) => {
+            fabricCanvas.loadFromJSON(editDesignState.canvasJson, () => {
+              // After loading, make sure ALL objects are properly configured
+              fabricCanvas.getObjects().forEach(obj => {
+                if (obj.type === 'i-text' || obj.type === 'text') {
+                  obj.set({
+                    editable: true,
+                    selectable: true,
+                    evented: true,
+                  });
+                } else if (obj.type === 'image') {
+                  // Make sure images are selectable (except QR and structural elements)
+                  if ((obj as any).selectable !== false) {
+                    obj.set({
+                      selectable: true,
+                      evented: true,
+                    });
+                  }
+                }
+              });
+              
+              fabricCanvas.renderAll();
+              
+              // Find and set uploaded image reference
+              const imgObj = fabricCanvas.getObjects().find(o => 
+                o.type === 'image' && (o as any).selectable !== false
+              ) as FabricImage | undefined;
+              if (imgObj) setUploadedImage(imgObj as any);
+              
+              resolve();
+            });
+          });
+          
+          toast.success("Design loaded for editing!");
+        }
+      } catch (e) {
+        console.error("Failed to load design for editing:", e);
+        toast.error("Failed to load design");
+      } finally {
+        setTimeout(() => {
+          isLoadingTemplateRef.current = false;
+        }, 100);
+      }
+    };
+    
+    loadEditDesign();
+  }, [fabricCanvas, editDesignState]);
 
   useEffect(() => {
     // Skip if we're loading a template (template will set its own background)
@@ -229,28 +306,29 @@ const DesignStudio = () => {
       setTrademarkTextObj(null);
     }
 
-    // Add new trademark text if enabled (vertical, positioned at left: 85, no transformation)
+    // Add new trademark text if enabled (vertical, from bottom to top)
     if (hasTrademark && trademarkText.trim()) {
       const text = new IText(trademarkText, {
-        left: 90, // Right after QR space
-        top: 90,
+        left: 1145, // Right side near closing white space
+        top: 92, // Start from bottom
         fontSize: 10,
         fill: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
         fontFamily: "Arial",
         fontWeight: 'light',
         originX: 'center',
-        originY: 'center',
-        angle: -90, // Vertical text
+        originY: 'bottom',
+        angle: -90, // Vertical text (from bottom to top)
         lockMovementX: true,
         lockMovementY: true,
         lockRotation: true,
         lockScalingX: true,
         lockScalingY: true,
-        selectable: true, // No transformation allowed
+        selectable: false, // Not selectable to avoid conflicts
         evented: false,
       });
 
       fabricCanvas.add(text);
+      fabricCanvas.sendObjectToBack(text); // Send to back to avoid overlapping custom text
       setTrademarkTextObj(text);
       fabricCanvas.renderAll();
     }
@@ -316,9 +394,9 @@ const DesignStudio = () => {
           img.scaleToHeight(maxHeight);
         }
         
-        // Position in the design area with proper clipping
+        // Position in the design area with proper clipping - start at left after QR
         img.set({
-          left: 625 - (img.getScaledWidth() / 2), // Center horizontally in design area (100 + 1050/2)
+          left: 110 + (img.getScaledWidth() / 2), // Start at left after QR space
           top: 50 - (img.getScaledHeight() / 2), // Center vertically
           selectable: true, // Keep selectable
           evented: true, // Keep evented
@@ -759,7 +837,7 @@ const DesignStudio = () => {
             
             {savedTemplates.length > 0 && (
               <div className="mt-6">
-                <h3 className="font-semibold mb-3">Saved Templates</h3>
+                <h3 className="font-semibold mb-3">Saved Mockup</h3>
                 <div className="grid grid-cols-2 gap-3">
                   {savedTemplates.map((template) => (
                     <div 
@@ -799,12 +877,14 @@ const DesignStudio = () => {
                               setTrademarkText(od.trademark_text || "");
                               setHasQrCode(od.has_qr_code || false);
                               
-                              // Set trademark text color
+                              // Set trademark text color - ensure it's set before canvas loads
                               if (od.trademark_text_color) {
-                                setTrademarkTextColor(od.trademark_text_color);
+                                setTrademarkTextColor(od.trademark_text_color === "white" ? "white" : "black");
                               } else if (od.trademark_text) {
                                 const textColor = (template as any).text_color || od.text_color;
                                 setTrademarkTextColor(textColor?.toLowerCase() === "#ffffff" ? "white" : "black");
+                              } else {
+                                setTrademarkTextColor("black");
                               }
                               
                               // Update background color

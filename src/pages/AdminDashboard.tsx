@@ -17,12 +17,15 @@ interface Order {
   payment_status: string;
   stripe_payment_intent_id: string | null;
   created_at: string;
+  print_type?: string;
+  extra_charges?: any;
   profiles: {
     email: string;
   } | null;
   designs: {
     design_url: string;
     wristband_type: string;
+    wristband_color?: string;
     custom_text: string | null;
   } | null;
   suppliers: {
@@ -325,36 +328,69 @@ const AdminDashboard = () => {
                       </div>
                     )}
                     <div className="md:col-span-2 space-y-2">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Type:</span>
-                        <span className="font-semibold capitalize">
-                          {order.designs?.wristband_type || "N/A"}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Quantity:</span>
-                        <span className="font-semibold">{order.quantity}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Unit Price:</span>
-                        <span className="font-semibold">${order.unit_price}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Total:</span>
-                        <span className="font-semibold text-primary">${order.total_price}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Date:</span>
-                        <span className="font-semibold">
-                          {new Date(order.created_at).toLocaleDateString()}
-                        </span>
-                      </div>
-                      {order.designs?.custom_text && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Text:</span>
-                          <span className="font-semibold">{order.designs.custom_text}</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-xs text-muted-foreground">Type</span>
+                          <div className="font-semibold capitalize">
+                            {order.designs?.wristband_type || "N/A"}
+                          </div>
                         </div>
-                      )}
+                        <div>
+                          <span className="text-xs text-muted-foreground">Quantity</span>
+                          <div className="font-semibold">{order.quantity} pcs</div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground">Color</span>
+                          <div className="font-semibold flex items-center gap-2">
+                            {order.designs?.wristband_color && (
+                              <span 
+                                className="w-4 h-4 rounded-full border"
+                                style={{ backgroundColor: order.designs.wristband_color }}
+                              />
+                            )}
+                            {order.designs?.wristband_color || "N/A"}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground">Print Type</span>
+                          <div className="font-semibold capitalize">
+                            {(order as any).print_type || "none"}
+                          </div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground">Unit Price</span>
+                          <div className="font-semibold">${order.unit_price}</div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground">Total</span>
+                          <div className="font-semibold text-primary">${order.total_price}</div>
+                        </div>
+                        <div>
+                          <span className="text-xs text-muted-foreground">Date</span>
+                          <div className="font-semibold">
+                            {new Date(order.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+                        {order.designs?.custom_text && (
+                          <div>
+                            <span className="text-xs text-muted-foreground">Trademark</span>
+                            <div className="font-semibold">{order.designs.custom_text}</div>
+                          </div>
+                        )}
+                        {(order as any).extra_charges && (
+                          <div className="col-span-2">
+                            <span className="text-xs text-muted-foreground">Extras</span>
+                            <div className="font-semibold text-sm">
+                              {Object.entries((order as any).extra_charges as Record<string, number>).map(([key, value]) => (
+                                <div key={key} className="flex justify-between">
+                                  <span className="capitalize">{key}:</span>
+                                  <span>${value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </CardContent>

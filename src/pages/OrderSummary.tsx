@@ -3,9 +3,15 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Truck, Clock, Calendar, ShieldCheck, Download as DownloadIcon, Trash2 } from "lucide-react";
+import { Truck, Clock, Calendar, ShieldCheck, Download as DownloadIcon, Trash2, Edit } from "lucide-react";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface LocationState {
   orderId: string;
@@ -23,6 +29,8 @@ const OrderSummary = () => {
   const [expressDelivery, setExpressDelivery] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [loadingProceed, setLoadingProceed] = useState(false);
+  const [selectedDesign, setSelectedDesign] = useState<any | null>(null);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
 
   const handleDeleteDesign = (idx: number) => {
     if (!designsInCart) return;
@@ -44,6 +52,18 @@ const OrderSummary = () => {
       console.error("Failed to update cart in localStorage", e);
       toast.error("Failed to remove design");
     }
+  };
+
+  const handleViewDesign = (design: any) => {
+    setSelectedDesign(design);
+    setViewDialogOpen(true);
+  };
+
+  const handleEditDesign = (design: any) => {
+    // Navigate to design studio with the design data to restore it
+    navigate("/design-studio", {
+      state: { editDesign: design }
+    });
   };
 
   useEffect(() => {
@@ -128,7 +148,7 @@ const OrderSummary = () => {
   // Wait until we know whether we have designs either from navigation state or localStorage
   if (!state && !designsInCart) return null;
 
-  const currencySymbol = state.orderDetails?.currency === "USD" ? "$" : state.orderDetails?.currency === "EUR" ? "€" : "£";
+  const currencySymbol = state?.orderDetails?.currency === "USD" ? "$" : state?.orderDetails?.currency === "EUR" ? "€" : "£";
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
@@ -156,8 +176,13 @@ const OrderSummary = () => {
               {designsInCart && designsInCart.length > 0 ? (
                 <div className="grid grid-cols-1 gap-3">
                   {designsInCart.map((d, idx) => (
-                    <div key={idx} className="flex items-center gap-3 p-3 bg-muted rounded">
-                      <img src={d.designUrl} alt={`Design ${idx + 1}`} className="w-100 h-8 object-cover rounded" />
+                    <div key={idx} className="flex items-center gap-3 p-3 bg-muted rounded hover:bg-muted/80 transition-colors">
+                      <img 
+                        src={d.designUrl} 
+                        alt={`Design ${idx + 1}`} 
+                        className="w-100 h-8 object-cover rounded cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => handleViewDesign(d)}
+                      />
                       <div className="flex-1 text-sm">
                         <div className="flex justify-between items-center">
                           <div>{d.orderDetails?.wristband_type || d.wristband_type}</div>
@@ -165,14 +190,24 @@ const OrderSummary = () => {
                         </div>
                         <div className="flex justify-between items-center">
                           <div className="text-muted-foreground">{d.orderDetails?.quantity || d.quantity} pcs</div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleDeleteDesign(idx)}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEditDesign(d)}
+                              className="text-primary hover:text-primary hover:bg-primary/10"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteDesign(idx)}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -275,6 +310,48 @@ const OrderSummary = () => {
           </Card>
         </div>
       </main>
+
+      {/* View Design Dialog */}
+      <Dialog open={viewDialogOpen} onOpenChange={setViewDialogOpen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Design Preview</DialogTitle>
+          </DialogHeader>
+          {selectedDesign && (
+            <div className="space-y-4">
+              <img 
+                src={selectedDesign.designUrl} 
+                alt="Design preview" 
+                className="w-full h-auto rounded-lg"
+              />
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="text-muted-foreground">Type:</span>
+                  <span className="ml-2 font-medium">{selectedDesign.orderDetails?.wristband_type}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Quantity:</span>
+                  <span className="ml-2 font-medium">{selectedDesign.orderDetails?.quantity} pcs</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Color:</span>
+                  <span className="ml-2 font-medium">{selectedDesign.orderDetails?.wristband_color}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Print:</span>
+                  <span className="ml-2 font-medium">{selectedDesign.orderDetails?.print_type || "none"}</span>
+                </div>
+                {selectedDesign.orderDetails?.trademark_text && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Trademark:</span>
+                    <span className="ml-2 font-medium">{selectedDesign.orderDetails.trademark_text}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
