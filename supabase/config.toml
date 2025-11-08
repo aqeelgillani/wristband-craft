@@ -10,9 +10,12 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.send-order-confirmation]
-verify_jwt = true
+verify_jwt = false
 
 [functions.send-admin-notification]
+verify_jwt = false
+
+[functions.send-supplier-notification]
 verify_jwt = false
 
 [functions.update-order-status]

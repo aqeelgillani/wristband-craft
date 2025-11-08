@@ -83,17 +83,27 @@ serve(async (req) => {
     if (paymentStatus === "paid") {
       console.log("update-payment-status: Sending confirmation emails");
       
-      // Send order confirmation to customer
-      await supabaseClient.functions.invoke("send-order-confirmation", {
-        body: { orderId: order.id },
-      });
+      try {
+        // Send order confirmation to customer
+        await supabaseClient.functions.invoke("send-order-confirmation", {
+          body: { orderId: order.id },
+        });
 
-      // Send admin notification
-      await supabaseClient.functions.invoke("send-admin-notification", {
-        body: { orderId: order.id },
-      });
-      
-      console.log("update-payment-status: Emails sent");
+        // Send notification to supplier
+        await supabaseClient.functions.invoke("send-supplier-notification", {
+          body: { orderId: order.id },
+        });
+
+        // Send admin notification
+        await supabaseClient.functions.invoke("send-admin-notification", {
+          body: { orderId: order.id },
+        });
+        
+        console.log("update-payment-status: Emails sent");
+      } catch (emailError) {
+        console.error("Error sending emails:", emailError);
+        // Don't throw - payment was successful even if emails failed
+      }
     }
 
     console.log(`Order ${order.id} payment status updated to ${paymentStatus}`);

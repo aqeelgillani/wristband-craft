@@ -400,6 +400,12 @@ const AdminDashboard = () => {
                           </div>
                         )}
                       </div>
+
+                      {/* Production Download Section */}
+                      <div className="mt-4 pt-4 border-t">
+                        <h4 className="font-semibold text-sm mb-3">Production Files</h4>
+                        <ProductionDownload order={order} />
+                      </div>
                     </div>
                   </div>
                 </CardContent>
