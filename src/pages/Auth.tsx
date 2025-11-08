@@ -29,20 +29,11 @@ const Auth = () => {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (isSignUp) {
-      if (!fullName.trim()) {
-        toast.error("Please enter your full name");
-        return;
-      }
-      if (password !== confirmPassword) {
-        toast.error("Passwords do not match");
-        return;
-      }
-      if (password.length < 6) {
-        toast.error("Password must be at least 6 characters");
-        return;
-      }
+      if (!fullName.trim()) return toast.error("Please enter your full name");
+      if (password !== confirmPassword) return toast.error("Passwords do not match");
+      if (password.length < 6) return toast.error("Password must be at least 6 characters");
     }
 
     setLoading(true);
@@ -54,20 +45,18 @@ const Auth = () => {
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/dashboard`,
-            data: {
-              full_name: fullName,
-            },
+            data: { full_name: fullName },
           },
         });
+
         if (error) throw error;
-        
-        // Send verification email via Resend
+
         if (data.user && !data.user.confirmed_at) {
           try {
             await supabase.functions.invoke("send-verification-email", {
               body: {
-                email: email,
-                fullName: fullName,
+                email,
+                fullName,
                 confirmationUrl: `${window.location.origin}/auth/confirm?token=${data.user.id}`,
               },
             });
@@ -75,19 +64,23 @@ const Auth = () => {
             console.error("Error sending verification email:", emailError);
           }
         }
-        
+
         toast.success("Sign up successful! Please check your email to verify your account.");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
+
         if (error) throw error;
-        toast.success("Signed in successfully!");
-        navigate("/dashboard");
+
+        if (data.session) {
+          toast.success("Signed in successfully!");
+          navigate("/dashboard");
+        }
       }
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || "Authentication failed");
     } finally {
       setLoading(false);
     }
@@ -98,13 +91,11 @@ const Auth = () => {
       setLoading(true);
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
+        options: { redirectTo: `${window.location.origin}/dashboard` },
       });
       if (error) throw error;
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || "Google sign-in failed");
       setLoading(false);
     }
   };
@@ -176,7 +167,7 @@ const Auth = () => {
               {loading ? "Loading..." : isSignUp ? "Sign Up" : "Sign In"}
             </Button>
           </form>
-          
+
           <div className="relative my-6">
             <div className="absolute inset-0 flex items-center">
               <span className="w-full border-t" />
