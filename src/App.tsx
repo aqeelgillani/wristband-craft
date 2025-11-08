@@ -12,6 +12,7 @@ import MyOrders from "./pages/MyOrders";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminPasswordReset from "./pages/AdminPasswordReset";
 import SupplierLogin from "./pages/SupplierLogin";
+import SupplierSignup from "./pages/SupplierSignup";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import OrderSummary from "./pages/OrderSummary";
 import Address from "./pages/Address";
@@ -30,6 +31,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/supplier-login" element={<SupplierLogin />} />
+          <Route path="/supplier-signup" element={<SupplierSignup />} />
           <Route path="/payment-success" element={<PaymentSuccess />} />
           <Route
             path="/dashboard"

@@ -7,26 +7,35 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { ArrowLeft, Package, DollarSign, Users, TrendingUp } from "lucide-react";
+import { ProductionDownload } from "@/components/ProductionDownload";
 
 interface Order {
   id: string;
   quantity: number;
   total_price: number;
   unit_price: number;
+  base_price: number;
   status: string;
   payment_status: string;
   stripe_payment_intent_id: string | null;
   created_at: string;
   print_type?: string;
   extra_charges?: any;
+  wristband_color?: string;
+  has_secure_guests?: boolean;
+  currency: string;
+  shipping_address?: any;
   profiles: {
     email: string;
+    full_name?: string;
   } | null;
   designs: {
     design_url: string;
     wristband_type: string;
     wristband_color?: string;
     custom_text: string | null;
+    text_color?: string;
+    text_position?: any;
   } | null;
   suppliers: {
     company_name: string;

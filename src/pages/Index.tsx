@@ -2,12 +2,53 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import heroImage from "@/assets/hero-wristbands.jpg";
-import { Palette, Zap, ShieldCheck, ArrowRight } from "lucide-react";
-import { useEffect } from "react";
+import { Palette, Zap, ShieldCheck, ArrowRight, LogOut } from "lucide-react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const navigate = useNavigate();
+  const [user, setUser] = useState<any>(null);
+  const [userName, setUserName] = useState<string>("");
+
+  useEffect(() => {
+    checkUser();
+  }, []);
+
+  const checkUser = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      setUser(session.user);
+      
+      // Check if user is a supplier
+      const { data: supplierData } = await supabase
+        .from("suppliers")
+        .select("company_name")
+        .eq("user_id", session.user.id)
+        .single();
+      
+      if (supplierData) {
+        setUserName(supplierData.company_name);
+      } else {
+        // Get profile full name
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("full_name")
+          .eq("id", session.user.id)
+          .single();
+        
+        setUserName(profileData?.full_name || session.user.email?.split("@")[0] || "User");
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setUserName("");
+    toast.success("Signed out successfully");
+  };
 
   useEffect(() => {
     try {
@@ -33,16 +74,33 @@ const Index = () => {
           <h1 className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">
             EU Wristbands
           </h1>
-          <div className="flex gap-3">
-            <Button variant="ghost" onClick={() => navigate("/supplier-login")}>
-              Supplier Login
-            </Button>
-            <Button variant="ghost" onClick={() => navigate("/auth")}>
-              Sign In
-            </Button>
-            <Button variant="hero" onClick={() => navigate("/auth")}>
-              Get Started
-            </Button>
+          <div className="flex gap-3 items-center">
+            {user ? (
+              <>
+                <span className="text-sm font-medium text-foreground">
+                  Welcome, {userName}
+                </span>
+                <Button variant="ghost" onClick={() => navigate("/dashboard")}>
+                  Dashboard
+                </Button>
+                <Button variant="ghost" onClick={handleSignOut}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Sign Out
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="ghost" onClick={() => navigate("/supplier-login")}>
+                  Supplier Login
+                </Button>
+                <Button variant="ghost" onClick={() => navigate("/auth")}>
+                  Sign In
+                </Button>
+                <Button variant="hero" onClick={() => navigate("/auth")}>
+                  Get Started
+                </Button>
+              </>
+            )}
           </div>
         </nav>
       </header>

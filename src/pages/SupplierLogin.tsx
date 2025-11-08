@@ -81,6 +81,9 @@ const SupplierLogin = () => {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              Sign in to access your supplier dashboard and manage orders
+            </p>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input
@@ -111,9 +114,13 @@ const SupplierLogin = () => {
           </form>
 
           <div className="mt-6 text-center text-sm">
-            <p className="text-muted-foreground">
-              Need access? Contact your administrator
-            </p>
+            <button
+              type="button"
+              onClick={() => navigate("/supplier-signup")}
+              className="text-primary hover:underline"
+            >
+              Don't have an account? Register as supplier
+            </button>
           </div>
 
           <div className="mt-4 text-center">
