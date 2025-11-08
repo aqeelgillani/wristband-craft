@@ -1,48 +1,41 @@
-import { supabase } from "./client";
-
-interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: string;
-}
+import { supabase } from "./client"; // your Supabase client
 
 export const dbStorage = {
-  // Get session from DB by key
-  async getItem(key: string): Promise<string | null> {
+  async getItem(key: string) {
     try {
       const { data, error } = await supabase
         .from("supabase_auth_sessions")
-        .select("access_token, refresh_token, expires_at")
+        .select("*")
         .eq("id", key)
         .single();
 
-      if (error || !data) return null;
+      if (error) {
+        console.error("dbStorage getItem error:", error);
+        return null;
+      }
 
-      // Supabase expects the session as a JSON string
-      const session: AuthSession = {
+      if (!data) return null;
+
+      // Supabase expects the **full session JSON**
+      return JSON.stringify({
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: data.expires_at,
-      };
-
-      return JSON.stringify(session);
+      });
     } catch (err) {
-      console.error("dbStorage.getItem error:", err);
+      console.error("dbStorage getItem exception:", err);
       return null;
     }
   },
 
-  // Save session to DB
-  async setItem(key: string, value: string): Promise<void> {
+  async setItem(key: string, value: string) {
     try {
-      // Supabase sends session as JSON string
-      const session: AuthSession = JSON.parse(value);
+      // Supabase v2: get user async
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
 
-      // Get current user
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      if (userError || !user) return;
+      const session = JSON.parse(value);
 
-      // Upsert into DB
       const { error } = await supabase.from("supabase_auth_sessions").upsert({
         id: key,
         user_id: user.id,
@@ -51,19 +44,18 @@ export const dbStorage = {
         expires_at: session.expires_at,
       });
 
-      if (error) console.error("dbStorage.setItem error:", error);
+      if (error) console.error("dbStorage setItem error:", error);
     } catch (err) {
-      console.error("dbStorage.setItem parse/save error:", err);
+      console.error("dbStorage setItem exception:", err);
     }
   },
 
-  // Remove session from DB
-  async removeItem(key: string): Promise<void> {
+  async removeItem(key: string) {
     try {
       const { error } = await supabase.from("supabase_auth_sessions").delete().eq("id", key);
-      if (error) console.error("dbStorage.removeItem error:", error);
+      if (error) console.error("dbStorage removeItem error:", error);
     } catch (err) {
-      console.error("dbStorage.removeItem exception:", err);
+      console.error("dbStorage removeItem exception:", err);
     }
   },
 };
