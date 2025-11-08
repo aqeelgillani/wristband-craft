@@ -1,68 +1,69 @@
-// dbStorage.ts
 import { supabase } from "./client";
 
-interface AuthSessionRow {
-  id: string;
-  user_id: string;
+interface AuthSession {
   access_token: string;
   refresh_token: string;
   expires_at: string;
 }
 
 export const dbStorage = {
+  // Get session from DB by key
   async getItem(key: string): Promise<string | null> {
     try {
-      const { data } = await supabase
-        .from<AuthSessionRow>("supabase_auth_sessions")
-        .select("access_token")
+      const { data, error } = await supabase
+        .from("supabase_auth_sessions")
+        .select("access_token, refresh_token, expires_at")
         .eq("id", key)
         .single();
 
-      return data?.access_token ?? null;
-    } catch (error) {
-      console.error("Error getting item from dbStorage:", error);
+      if (error || !data) return null;
+
+      // Supabase expects the session as a JSON string
+      const session: AuthSession = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+        expires_at: data.expires_at,
+      };
+
+      return JSON.stringify(session);
+    } catch (err) {
+      console.error("dbStorage.getItem error:", err);
       return null;
     }
   },
 
+  // Save session to DB
   async setItem(key: string, value: string): Promise<void> {
     try {
-      const { data: userData } = await supabase.auth.getUser();
-      const user = userData?.user;
+      // Supabase sends session as JSON string
+      const session: AuthSession = JSON.parse(value);
 
-      if (!user) {
-        console.warn("No user logged in. Cannot save session to dbStorage.");
-        return;
-      }
+      // Get current user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) return;
 
-      const expiresAt = new Date(Date.now() + 3600 * 1000).toISOString(); // 1 hour expiry
+      // Upsert into DB
+      const { error } = await supabase.from("supabase_auth_sessions").upsert({
+        id: key,
+        user_id: user.id,
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at,
+      });
 
-      const { error } = await supabase
-        .from<AuthSessionRow>("supabase_auth_sessions")
-        .upsert({
-          id: key,
-          user_id: user.id,
-          access_token: value,
-          refresh_token: value, // For simplicity, store same value; can be updated to actual refresh token
-          expires_at: expiresAt,
-        });
-
-      if (error) console.error("Error saving session in dbStorage:", error);
-    } catch (error) {
-      console.error("dbStorage setItem error:", error);
+      if (error) console.error("dbStorage.setItem error:", error);
+    } catch (err) {
+      console.error("dbStorage.setItem parse/save error:", err);
     }
   },
 
+  // Remove session from DB
   async removeItem(key: string): Promise<void> {
     try {
-      const { error } = await supabase
-        .from<AuthSessionRow>("supabase_auth_sessions")
-        .delete()
-        .eq("id", key);
-
-      if (error) console.error("Error removing session from dbStorage:", error);
-    } catch (error) {
-      console.error("dbStorage removeItem error:", error);
+      const { error } = await supabase.from("supabase_auth_sessions").delete().eq("id", key);
+      if (error) console.error("dbStorage.removeItem error:", error);
+    } catch (err) {
+      console.error("dbStorage.removeItem exception:", err);
     }
   },
 };
