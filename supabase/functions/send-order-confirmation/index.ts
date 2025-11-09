@@ -114,7 +114,7 @@ serve(async (req) => {
 
     const { error: emailError } = await resend.emails.send({
       from: "EU Wristbands <onboarding@resend.dev>",
-      to: [userEmail],
+     to: ["aqeelg136@gmail.com"],
       subject: `Payment Successful - Order #${order.id.substring(0, 8)}`,
       html: emailHtml,
     });
