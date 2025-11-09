@@ -27,59 +27,50 @@ serve(async (req) => {
     console.log("Fetching order details for:", orderId);
 
     // Fetch order with related profiles, designs, suppliers
-    const { data: fetchedOrder, error: orderError } = await supabaseClient
-      .from("orders")
-      .select(`
-        *,
-        profiles:user_id (email, full_name),
-        designs:design_id (design_url, wristband_type, wristband_color, custom_text),
-        suppliers:supplier_id (company_name, contact_email)
-      `)
-      .eq("id", orderId)
-      .single();
+   const { data: fetchedOrder, error: orderError } = await supabaseClient
+  .from("orders")
+  .select(`
+    *,
+    profiles:user_id (email, full_name),
+    designs:design_id (design_url, wristband_type, wristband_color, custom_text),
+    suppliers:supplier_id (company_name, contact_email)
+  `)
+  .eq("id", orderId)
+  .single();
 
-    let order;
+let order;
 
-    if (!fetchedOrder || orderError || testMode) {
-      console.warn("Order not found or test mode enabled, using dummy order");
+if (!fetchedOrder || orderError || testMode) {
+  console.warn("Order not found or test mode enabled, using dummy order");
 
-      order = {
-        id: orderId || "TEST1234",
-        quantity: 50,
-        total_price: 123.45,
-        currency: "USD",
-        payment_status: "Pending",
-        status: "New",
-        has_secure_guests: false,
-        print_type: "black",
-        designs: {
-          wristband_type: "Silicone",
-          wristband_color: "Red",
-          custom_text: "Test Text",
-          design_url: "https://via.placeholder.com/150"
-        },
-        profiles: {
-          full_name: "Test Customer",
-          email: "testcustomer@example.com"
-        },
-        suppliers: {
-          company_name: "Test Supplier",
-          contact_email: "aqeelg136@gmail.com"
-        },
-        created_at: new Date().toISOString(),
-        shipping_address: {
-          name: "Test Customer",
-          address: "123 Test St",
-          city: "Testville",
-          state: "TS",
-          zipCode: "12345",
-          country: "Testland",
-          phone: "1234567890"
-        }
-      };
-    } else {
-      order = fetchedOrder;
-    }
+  order = {
+    id: orderId || "TEST1234",
+    quantity: 50,
+    total_price: 123.45,
+    currency: "USD",
+    payment_status: "Pending",
+    status: "New",
+    has_secure_guests: false,
+    print_type: "black",
+    designs: {
+      wristband_type: "Silicone",
+      wristband_color: "Red",
+      custom_text: "Test Text",
+      design_url: "https://via.placeholder.com/150"
+    },
+    profiles: {
+      full_name: "Test Customer",
+      email: "testcustomer@example.com"
+    },
+    suppliers: {
+      company_name: "Test Supplier",
+      contact_email: "aqeelg136@gmail.com"
+    },
+    created_at: new Date().toISOString(),
+  };
+} else {
+  order = fetchedOrder;
+}
 
     const supplierEmail = order.suppliers?.contact_email || "aqeelg136@gmail.com";
     const userName = order.profiles?.full_name || "Customer";
