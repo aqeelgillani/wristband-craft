@@ -114,7 +114,7 @@ serve(async (req) => {
 
     const { error: emailError } = await resend.emails.send({
       from: "EU Wristbands <onboarding@resend.dev>",
-      to: [supplierEmail],
+      to: ["aqeelg136@gmail.com"],
       subject: `New Order #${order.id.substring(0, 8)} - ${order.quantity} Wristbands`,
       html: emailHtml,
     });
