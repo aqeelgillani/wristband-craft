@@ -11,7 +11,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Initialize Supabase client with **service role key**
+// Initialize Supabase client with service role key
 const supabaseClient = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_KEY") ?? "" // must be service role key
@@ -24,11 +24,10 @@ serve(async (req) => {
 
   try {
     const { orderId, testMode } = await req.json();
-
     console.log("Fetching order details for:", orderId);
 
     // Fetch order with related profiles, designs, suppliers
-    const { data: order, error: orderError } = await supabaseClient
+    const { data: fetchedOrder, error: orderError } = await supabaseClient
       .from("orders")
       .select(`
         *,
@@ -39,17 +38,50 @@ serve(async (req) => {
       .eq("id", orderId)
       .single();
 
-    if (orderError || !order) {
-      console.error("Order not found:", orderError);
-      throw new Error("Order not found");
+    let order;
+
+    if (!fetchedOrder || orderError || testMode) {
+      console.warn("Order not found or test mode enabled, using dummy order");
+
+      order = {
+        id: orderId || "TEST1234",
+        quantity: 50,
+        total_price: 123.45,
+        currency: "USD",
+        payment_status: "Pending",
+        status: "New",
+        has_secure_guests: false,
+        print_type: "black",
+        designs: {
+          wristband_type: "Silicone",
+          wristband_color: "Red",
+          custom_text: "Test Text",
+          design_url: "https://via.placeholder.com/150"
+        },
+        profiles: {
+          full_name: "Test Customer",
+          email: "testcustomer@example.com"
+        },
+        suppliers: {
+          company_name: "Test Supplier",
+          contact_email: "aqeelg136@gmail.com"
+        },
+        created_at: new Date().toISOString(),
+        shipping_address: {
+          name: "Test Customer",
+          address: "123 Test St",
+          city: "Testville",
+          state: "TS",
+          zipCode: "12345",
+          country: "Testland",
+          phone: "1234567890"
+        }
+      };
+    } else {
+      order = fetchedOrder;
     }
 
-    const supplierEmail = order.suppliers?.contact_email;
-    if (!supplierEmail) {
-      console.error("Supplier email not found");
-      throw new Error("Supplier email not found");
-    }
-
+    const supplierEmail = order.suppliers?.contact_email || "aqeelg136@gmail.com";
     const userName = order.profiles?.full_name || "Customer";
     const supplierName = order.suppliers?.company_name || "Supplier";
     const currencySymbol = order.currency === "USD" ? "$" : order.currency === "EUR" ? "€" : "£";
@@ -86,8 +118,7 @@ serve(async (req) => {
       </div>
     `;
 
-    // Determine recipient (test mode or real supplier)
-    const recipient = testMode ? ["syedaqeel185@gmail.com"] : [supplierEmail];
+    const recipient = testMode ? ["aqeelg136@gmail.com"] : [supplierEmail];
 
     console.log(`Sending ${testMode ? "test" : "real"} email to:`, recipient);
 
