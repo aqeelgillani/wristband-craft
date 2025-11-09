@@ -112,12 +112,18 @@ serve(async (req) => {
       </div>
     `;
 
-    const { error: emailError } = await resend.emails.send({
-      from: "EU Wristbands <onboarding@resend.dev>",
-      to: ["aqeelg136@gmail.com"],
-      subject: `New Order #${order.id.substring(0, 8)} - ${order.quantity} Wristbands`,
-      html: emailHtml,
-    });
+console.log("🧪 Test Mode: Supplier email would be sent to:", supplierEmail);
+
+const { error: emailError } = await resend.emails.send({
+  from: "EU Wristbands <onboarding@resend.dev>",
+  to: ["aqeelg136@gmail.com"], // Always your email in test mode
+  subject: `🧪 TEST: New Order #${order.id.substring(0, 8)} - ${order.quantity} Wristbands`,
+  html: `
+    <p style="color:#888;">This is a <strong>TEST EMAIL</strong>. The real supplier email would be: <strong>${supplierEmail}</strong></p>
+    ${emailHtml}
+  `,
+});
+
 
     if (emailError) {
       console.error("Email sending error:", emailError);
