@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
-import { Download } from "lucide-react";
+import { Download, Image as ImageIcon } from "lucide-react";
 import jsPDF from "jspdf";
+import { toast } from "sonner";
 
 interface ProductionDownloadProps {
   order: any;
@@ -181,39 +182,63 @@ export const ProductionDownload = ({ order }: ProductionDownloadProps) => {
     doc.save(`production-order-${order.id.substring(0, 8)}.pdf`);
   };
 
-  const downloadDesignImage = () => {
-    if (!order.designs?.design_url) return;
+  const downloadDesignImage = async () => {
+    if (!order.designs?.design_url) {
+      toast.error("No design image available");
+      return;
+    }
     
-    const link = document.createElement("a");
-    link.href = order.designs.design_url;
-    link.download = `design-${order.id.substring(0, 8)}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const response = await fetch(order.designs.design_url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `logo-design-${order.id.substring(0, 8)}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success("Logo downloaded successfully");
+    } catch (error) {
+      toast.error("Failed to download logo");
+      console.error("Download error:", error);
+    }
+  };
+
+  const downloadProductionPDF = () => {
+    try {
+      generateProductionPDF();
+      toast.success("Production PDF downloaded successfully");
+    } catch (error) {
+      toast.error("Failed to generate PDF");
+      console.error("PDF generation error:", error);
+    }
   };
 
   return (
-    <div className="flex gap-2">
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={generateProductionPDF}
-        className="flex-1"
-      >
-        <Download className="h-4 w-4 mr-2" />
-        Production PDF
-      </Button>
+    <div className="flex gap-2 flex-wrap">
       {order.designs?.design_url && (
         <Button
           variant="outline"
           size="sm"
           onClick={downloadDesignImage}
-          className="flex-1"
+          className="gap-2"
         >
-          <Download className="h-4 w-4 mr-2" />
-          Design Image
+          <ImageIcon className="h-4 w-4" />
+          Logo/Design
         </Button>
       )}
+      
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={downloadProductionPDF}
+        className="gap-2"
+      >
+        <Download className="h-4 w-4" />
+        Full Production PDF
+      </Button>
     </div>
   );
 };
