@@ -90,8 +90,8 @@ const Address = () => {
 
       console.log("Processing checkout for", state.designs.length, "designs");
 
-      // For each design, ensure order exists in database, then update with shipping
-      let firstOrderId: string | null = null;
+      // Collect all order IDs (create orders if needed)
+      const orderIds: string[] = [];
       
       for (const d of state.designs) {
         let orderId = d.orderId || d.order_id || null;
@@ -161,33 +161,41 @@ const Address = () => {
           }
         }
 
-        if (!firstOrderId) firstOrderId = orderId;
+        orderIds.push(orderId);
+      }
 
-        // Fetch existing order to merge extras and total
-        const { data: orderData, error: fetchErr } = await supabase
-          .from("orders")
-          .select("extra_charges, total_price")
-          .eq("id", orderId)
-          .single();
-        
-        if (fetchErr) {
-          console.error("Failed to fetch order", orderId, fetchErr);
-          throw new Error("Failed to fetch order: " + fetchErr.message);
-        }
+      if (orderIds.length === 0) {
+        toast.error("No orders found to checkout");
+        setLoading(false);
+        return;
+      }
 
-        // Merge express delivery charge
-        const existingExtras = (orderData?.extra_charges && typeof orderData.extra_charges === 'object') 
-          ? orderData.extra_charges 
+      console.log("Updating orders:", orderIds);
+
+      // Update ALL orders at once with shipping address and express charges
+      const expressValue = state.expressDelivery ? 19 : 0;
+
+      // Fetch all orders to get current totals
+      const { data: ordersData, error: fetchOrdersErr } = await supabase
+        .from("orders")
+        .select("id, extra_charges, total_price")
+        .in("id", orderIds);
+      
+      if (fetchOrdersErr) {
+        console.error("Failed to fetch orders:", fetchOrdersErr);
+        throw new Error("Failed to fetch orders: " + fetchOrdersErr.message);
+      }
+
+      // Update each order individually with merged extras
+      for (const order of ordersData || []) {
+        const existingExtras = (order.extra_charges && typeof order.extra_charges === 'object') 
+          ? order.extra_charges 
           : {};
-        const expressValue = state.expressDelivery ? 19 : 0;
+        
         const newExtras = { ...existingExtras, express: expressValue };
-
-        const currentTotal = orderData?.total_price ? Number(orderData.total_price) : 0;
+        const currentTotal = order.total_price ? Number(order.total_price) : 0;
         const newTotal = currentTotal + expressValue;
 
-        console.log("Updating order", orderId, "with shipping and total:", newTotal);
-
-        // Update order with shipping address and extras
         const { error: updateErr } = await supabase
           .from("orders")
           .update({
@@ -195,27 +203,21 @@ const Address = () => {
             extra_charges: newExtras,
             total_price: newTotal,
           })
-          .eq("id", orderId);
+          .eq("id", order.id);
 
         if (updateErr) {
-          console.error("Failed to update order", orderId, updateErr);
+          console.error("Failed to update order", order.id, updateErr);
           throw new Error("Failed to update order: " + updateErr.message);
         }
       }
 
-      if (!firstOrderId) {
-        toast.error("No orders found to checkout");
-        setLoading(false);
-        return;
-      }
+      console.log("All orders updated. Creating Stripe checkout session for orders:", orderIds);
 
-      console.log("Creating Stripe checkout session for order:", firstOrderId);
-
-      // Create Stripe checkout session with proper auth header
+      // Create Stripe checkout session with ALL order IDs
       const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
         "create-checkout",
         {
-          body: { orderIds: [firstOrderId] }, // Pass as array for consistency with create-checkout function
+          body: { orderIds }, // Send array of all order IDs
           headers: {
             Authorization: `Bearer ${session.access_token}`,
           },
@@ -234,12 +236,12 @@ const Address = () => {
         throw new Error(checkoutData?.error || "Failed to create checkout session - no URL returned");
       }
 
-      // Update stripe session id on the order
+      // Update stripe session id on all orders
       try {
         await supabase
           .from("orders")
           .update({ stripe_session_id: checkoutData.sessionId })
-          .eq("id", firstOrderId);
+          .in("id", orderIds);
       } catch (e) {
         console.warn("Failed to update stripe session id", e);
       }
