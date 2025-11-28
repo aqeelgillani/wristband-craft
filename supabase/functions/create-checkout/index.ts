@@ -1,7 +1,5 @@
-// File: supabase/functions/create-checkout/index.ts
-
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@18.5.0";
+import Stripe from "https://esm.sh/stripe@14.21.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 // Basic CORS setup for Supabase Functions
@@ -19,7 +17,10 @@ serve(async (req) => {
   try {
     // 🧩 Step 1: Authenticate user
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Missing Authorization header");
+    if (!authHeader) {
+      console.error("Missing Authorization header");
+      throw new Error("Missing Authorization header");
+    }
 
     // Create Supabase client with auth token for RLS
     const supabaseClient = createClient(
@@ -35,148 +36,195 @@ serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } =
       await supabaseClient.auth.getUser(token);
-    if (userError || !userData?.user) throw new Error("User not authenticated");
+    
+    if (userError) {
+      console.error("Auth error:", userError);
+      throw new Error("User not authenticated: " + userError.message);
+    }
+    
+    if (!userData?.user) {
+      console.error("No user data returned");
+      throw new Error("User not authenticated");
+    }
 
     const user = userData.user;
     console.log("User authenticated:", user.email);
-    console.log("Request body:", await req.clone().json());
 
     // 🧩 Step 2: Parse request body
-    const { orderId } = await req.json();
-    if (!orderId) throw new Error("Missing orderId in request");
+    const body = await req.json();
+    const { orderIds } = body; // Expecting an array of order IDs
+    
+    if (!orderIds || orderIds.length === 0) {
+      console.error("Missing orderIds in request body:", body);
+      throw new Error("Missing orderIds in request");
+    }
 
-    // 🧩 Step 3: Fetch order details
-    const { data: order, error: orderError } = await supabaseClient
+    console.log("Processing checkout for orderIds:", orderIds);
+
+    // 🧩 Step 3: Fetch all orders
+    const { data: orders, error: ordersError } = await supabaseClient
       .from("orders")
       .select("*")
-      .eq("id", orderId)
-      .single();
+      .in("id", orderIds);
 
-    if (orderError || !order) {
-      console.error("Order lookup failed:", orderError);
-      throw new Error(`Order not found for ID: ${orderId}`);
-      throw new Error("Order not found");
+    if (ordersError || !orders || orders.length === 0) {
+      console.error("Orders lookup failed:", ordersError);
+      throw new Error(`Orders not found for IDs: ${orderIds.join(", ")}`);
     }
 
-    // Optionally fetch design details if design_id exists
-    let wristbandType = "silicone";
-    if (order.design_id) {
-      try {
-        const { data: design } = await supabaseClient
-          .from("designs")
-          .select("wristband_type")
-          .eq("id", order.design_id)
-          .single();
-        if (design) {
-          wristbandType = design.wristband_type;
-        }
-      } catch (e) {
-        console.warn("Failed to fetch design details for design ID:", order.design_id, e);
+    console.log("Found orders:", orders.map(o => o.id));
+
+    // 🧩 Step 4: Prepare line items and calculate total amount
+    const lineItems: any[] = [];
+    let totalAmount = 0;
+    const currency = (orders[0].currency || "USD").toLowerCase();
+
+    for (const order of orders) {
+      if (!order.total_price || order.total_price <= 0) {
+        throw new Error(`Invalid order total price for order ${order.id}: ${order.total_price}`);
       }
+
+      const orderAmount = Math.round(Number(order.total_price) * 100);
+      totalAmount += orderAmount;
+
+      // Fetch design details if design_id exists
+      let wristbandType = "silicone";
+      if (order.design_id) {
+        try {
+          const { data: design } = await supabaseClient
+            .from("designs")
+            .select("wristband_type")
+            .eq("id", order.design_id)
+            .single();
+          if (design?.wristband_type) {
+            wristbandType = design.wristband_type;
+          }
+        } catch (e) {
+          console.warn("⚠️ Failed to fetch design for order", order.id, "using default");
+        }
+      }
+
+      // Build product description
+      let description = `Custom ${wristbandType} wristband`;
+      if (order.print_type && order.print_type !== "none") {
+        description += ` with ${
+          order.print_type === "black" ? "black print" : "full color print"
+        }`;
+      }
+      if (order.has_secure_guests) {
+        description += " + secure guests";
+      }
+      if (order.quantity) {
+        description += ` (${order.quantity} pcs)`;
+      }
+
+      // Add line item
+      lineItems.push({
+        price_data: {
+          currency,
+          product_data: {
+            name: `EU Wristbands - ${wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)}`,
+            description,
+          },
+          unit_amount: orderAmount,
+        },
+        quantity: 1,
+      });
     }
 
-    const totalAmount = Math.round(order.total_price * 100); // convert to cents
-    const currency = (order.currency || "USD").toLowerCase();
+    console.log("✅ Total amount:", totalAmount, "cents");
+    console.log("✅ Total line items:", lineItems.length);
 
-    // 🧩 Step 4: Initialize Stripe
+    // 🧩 Step 5: Initialize Stripe
     const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeSecret) {
-      console.error("Stripe secret key not configured");
+      console.error("❌ STRIPE_SECRET_KEY not configured");
       throw new Error("Stripe secret key not configured");
     }
 
     const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2024-09-30.acacia", // ✅ valid, stable version
+      apiVersion: "2023-10-16",
+      httpClient: Stripe.createFetchHttpClient(),
     });
+    console.log("✅ Stripe initialized");
 
-    // 🧩 Step 5: Retrieve or create a Stripe customer
-    const customers = await stripe.customers.list({
-      email: user.email,
-      limit: 1,
-    });
+    // 🧩 Step 6: Retrieve or create Stripe customer
     let customerId: string | undefined;
-    if (customers.data.length > 0) {
-      customerId = customers.data[0].id;
+    
+    if (user.email) {
+      try {
+        console.log("Looking up Stripe customer for:", user.email);
+        const customers = await stripe.customers.list({
+          email: user.email,
+          limit: 1,
+        });
+        
+        if (customers.data.length > 0) {
+          customerId = customers.data[0].id;
+          console.log("✅ Found existing Stripe customer:", customerId);
+        } else {
+          console.log("No existing customer, will create during checkout");
+        }
+      } catch (e) {
+        console.warn("⚠️ Failed to lookup Stripe customer:", e);
+      }
     }
 
-    // 🧩 Step 6: Build product description
-    let description = `Custom ${wristbandType} wristband`;
-    if (order.print_type && order.print_type !== "none") {
-      description += ` with ${
-        order.print_type === "black" ? "black print" : "full color print"
-      }`;
-    }
-    if (order.has_secure_guests) {
-      description += " + secure guests option";
-    }
+    // Get origin for redirect URLs
+    const origin = req.headers.get("origin") || Deno.env.get("SITE_URL") || "http://localhost:5173";
+    console.log("Using origin:", origin);
 
     // 🧩 Step 7: Create Stripe Checkout Session
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      customer_email: customerId ? undefined : user.email,
-      line_items: [
-        {
-          price_data: {
-            currency,
-            product_data: {
-              name: `EU Wristbands - ${
-                wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)
-              }`,
-              description,
-            },
-            unit_amount: totalAmount,
-          },
-          quantity: 1,
-        },
-      ],
+    const sessionParams: any = {
+      line_items: lineItems,
       mode: "payment",
-      success_url: `${req.headers.get("origin")}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.get("origin")}/design-studio?canceled=true`,
+      success_url: `${origin}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/design-studio?canceled=true`,
       metadata: {
-        orderId,
+        orderIds: orderIds.join(","),
         userId: user.id,
       },
+    };
+
+    if (customerId) {
+      sessionParams.customer = customerId;
+    } else if (user.email) {
+      sessionParams.customer_email = user.email;
+    }
+
+    console.log("Creating Stripe session with:", {
+      lineItems: lineItems.length,
+      mode: sessionParams.mode,
+      customer: sessionParams.customer,
+      customer_email: sessionParams.customer_email,
     });
 
-    console.log("Stripe checkout session input:", {
-      customer: customerId,
-      customer_email: customerId ? undefined : user.email,
-      line_items: [
-        {
-          price_data: {
-            currency,
-            product_data: {
-              name: `EU Wristbands - ${
-                wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)
-              }`,
-              description,
-            },
-            unit_amount: totalAmount,
-          },
-          quantity: 1,
-        },
-      ],
-      mode: "payment",
-      success_url: `${req.headers.get("origin")}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.get("origin")}/design-studio?canceled=true`,
-      metadata: {
-        orderId,
-        userId: user.id,
-      },
-    });
+    const session = await stripe.checkout.sessions.create(sessionParams);
+
     console.log("✅ Checkout session created:", session.id);
+    console.log("✅ Session URL:", session.url);
 
     return new Response(
-      JSON.stringify({ url: session.url, sessionId: session.id }),
+      JSON.stringify({ 
+        url: session.url, 
+        sessionId: session.id 
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 200,
       }
     );
+
   } catch (error: any) {
-    console.error("❌ Error in create-checkout:", error);
+    console.error("❌❌❌ FATAL ERROR in create-checkout ❌❌❌");
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    
     return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
+      JSON.stringify({ 
+        error: error.message || "Internal server error",
+        details: error.stack
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
