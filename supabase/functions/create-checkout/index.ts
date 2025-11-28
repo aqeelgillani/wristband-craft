@@ -1,7 +1,7 @@
 // File: supabase/functions/create-checkout/index.ts
 
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import Stripe from "https://esm.sh/stripe@18.5.0";
+import Stripe from "https://esm.sh/stripe@14.21.0";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 // Basic CORS setup for Supabase Functions
@@ -19,7 +19,10 @@ serve(async (req) => {
   try {
     // 🧩 Step 1: Authenticate user
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("Missing Authorization header");
+    if (!authHeader) {
+      console.error("Missing Authorization header");
+      throw new Error("Missing Authorization header");
+    }
 
     // Create Supabase client with auth token for RLS
     const supabaseClient = createClient(
@@ -35,14 +38,30 @@ serve(async (req) => {
     const token = authHeader.replace("Bearer ", "");
     const { data: userData, error: userError } =
       await supabaseClient.auth.getUser(token);
-    if (userError || !userData?.user) throw new Error("User not authenticated");
+    
+    if (userError) {
+      console.error("Auth error:", userError);
+      throw new Error("User not authenticated: " + userError.message);
+    }
+    
+    if (!userData?.user) {
+      console.error("No user data returned");
+      throw new Error("User not authenticated");
+    }
 
     const user = userData.user;
     console.log("User authenticated:", user.email);
 
     // 🧩 Step 2: Parse request body
-    const { orderId } = await req.json();
-    if (!orderId) throw new Error("Missing orderId in request");
+    const body = await req.json();
+    const { orderId } = body;
+    
+    if (!orderId) {
+      console.error("Missing orderId in request body:", body);
+      throw new Error("Missing orderId in request");
+    }
+
+    console.log("Processing checkout for orderId:", orderId);
 
     // 🧩 Step 3: Fetch order details
     const { data: order, error: orderError } = await supabaseClient
@@ -51,10 +70,17 @@ serve(async (req) => {
       .eq("id", orderId)
       .single();
 
-    if (orderError || !order) {
+    if (orderError) {
       console.error("Order lookup failed:", orderError);
+      throw new Error("Order not found: " + orderError.message);
+    }
+    
+    if (!order) {
+      console.error("No order data returned for id:", orderId);
       throw new Error("Order not found");
     }
+
+    console.log("Order found:", order.id, "Total:", order.total_price);
 
     // Optionally fetch design details if design_id exists
     let wristbandType = "silicone";
@@ -65,33 +91,55 @@ serve(async (req) => {
           .select("wristband_type")
           .eq("id", order.design_id)
           .single();
-        if (design) {
+        if (design?.wristband_type) {
           wristbandType = design.wristband_type;
         }
       } catch (e) {
-        console.warn("Failed to fetch design details, using default");
+        console.warn("Failed to fetch design details, using default:", e);
       }
     }
 
-    const totalAmount = Math.round(order.total_price * 100); // convert to cents
+    // Validate total_price
+    if (!order.total_price || order.total_price <= 0) {
+      throw new Error("Invalid order total price: " + order.total_price);
+    }
+
+    const totalAmount = Math.round(Number(order.total_price) * 100); // convert to cents
     const currency = (order.currency || "USD").toLowerCase();
+
+    console.log("Stripe amount:", totalAmount, "cents, currency:", currency);
 
     // 🧩 Step 4: Initialize Stripe
     const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeSecret) throw new Error("Stripe secret key not configured");
+    if (!stripeSecret) {
+      console.error("STRIPE_SECRET_KEY not configured");
+      throw new Error("Stripe secret key not configured");
+    }
 
     const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2024-09-30.acacia", // ✅ valid, stable version
+      apiVersion: "2023-10-16",
+      httpClient: Stripe.createFetchHttpClient(),
     });
 
     // 🧩 Step 5: Retrieve or create a Stripe customer
-    const customers = await stripe.customers.list({
-      email: user.email,
-      limit: 1,
-    });
     let customerId: string | undefined;
-    if (customers.data.length > 0) {
-      customerId = customers.data[0].id;
+    
+    if (user.email) {
+      try {
+        const customers = await stripe.customers.list({
+          email: user.email,
+          limit: 1,
+        });
+        
+        if (customers.data.length > 0) {
+          customerId = customers.data[0].id;
+          console.log("Existing Stripe customer found:", customerId);
+        } else {
+          console.log("No existing Stripe customer, will create during checkout");
+        }
+      } catch (e) {
+        console.warn("Failed to lookup Stripe customer:", e);
+      }
     }
 
     // 🧩 Step 6: Build product description
@@ -105,10 +153,12 @@ serve(async (req) => {
       description += " + secure guests option";
     }
 
+    // Get origin for redirect URLs
+    const origin = req.headers.get("origin") || Deno.env.get("SITE_URL") || "http://localhost:5173";
+    console.log("Using origin for redirects:", origin);
+
     // 🧩 Step 7: Create Stripe Checkout Session
-    const session = await stripe.checkout.sessions.create({
-      customer: customerId,
-      customer_email: customerId ? undefined : user.email,
+    const sessionParams: any = {
       line_items: [
         {
           price_data: {
@@ -125,13 +175,23 @@ serve(async (req) => {
         },
       ],
       mode: "payment",
-      success_url: `${req.headers.get("origin")}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.get("origin")}/design-studio?canceled=true`,
+      success_url: `${origin}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/design-studio?canceled=true`,
       metadata: {
         orderId,
         userId: user.id,
       },
-    });
+    };
+
+    // Add customer info
+    if (customerId) {
+      sessionParams.customer = customerId;
+    } else if (user.email) {
+      sessionParams.customer_email = user.email;
+    }
+
+    console.log("Creating Stripe checkout session...");
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     console.log("✅ Checkout session created:", session.id);
 
@@ -145,7 +205,10 @@ serve(async (req) => {
   } catch (error: any) {
     console.error("❌ Error in create-checkout:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
+      JSON.stringify({ 
+        error: error.message || "Internal server error",
+        details: error.toString()
+      }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
         status: 500,
