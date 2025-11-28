@@ -81,7 +81,7 @@ serve(async (req) => {
     if (!stripeSecret) throw new Error("Stripe secret key not configured");
 
     const stripe = new Stripe(stripeSecret, {
-      apiVersion: "2024-09-30.acacia", // ✅ valid, stable version
+      apiVersion: "2024-09-30", // Use a stable API version
     });
 
     // 🧩 Step 5: Retrieve or create a Stripe customer
