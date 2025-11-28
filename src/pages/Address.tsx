@@ -214,6 +214,8 @@ const Address = () => {
       console.log("All orders updated. Creating Stripe checkout session for orders:", orderIds);
 
       // Create Stripe checkout session with ALL order IDs
+      console.log("Invoking create-checkout function with orderIds:", orderIds);
+      
       const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
         "create-checkout",
         {
@@ -224,17 +226,29 @@ const Address = () => {
         }
       );
 
-      console.log("Checkout response:", checkoutData, checkoutError);
+      console.log("Checkout function response:", { checkoutData, checkoutError });
 
+      // Check for function invocation error
       if (checkoutError) {
-        console.error("Checkout function error:", checkoutError);
-        throw new Error(checkoutError.message || "Failed to create checkout session");
+        console.error("Checkout function invocation error:", checkoutError);
+        const errorMsg = checkoutError.message || checkoutError.toString() || "Failed to invoke checkout function";
+        throw new Error(`Checkout Error: ${errorMsg}`);
       }
 
-      if (!checkoutData?.url) {
-        console.error("No checkout URL in response:", checkoutData);
-        throw new Error(checkoutData?.error || "Failed to create checkout session - no URL returned");
+      // Check if response contains an error (function returned error in data)
+      if (checkoutData?.error) {
+        console.error("Checkout function returned error:", checkoutData.error);
+        const details = checkoutData.details ? ` - ${checkoutData.details}` : "";
+        throw new Error(`Checkout Failed: ${checkoutData.error}${details}`);
       }
+
+      // Check for checkout URL
+      if (!checkoutData?.url) {
+        console.error("No checkout URL in response. Full response:", checkoutData);
+        throw new Error("No checkout URL returned from payment service");
+      }
+
+      console.log("✅ Checkout session created successfully:", checkoutData.sessionId);
 
       // Update stripe session id on all orders
       try {
