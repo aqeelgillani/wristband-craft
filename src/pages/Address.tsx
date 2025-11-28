@@ -116,7 +116,7 @@ const Address = () => {
               design_id: designId,
               supplier_id: selectedSupplierId,
               quantity: d.orderDetails?.quantity || 1000,
-              total_price: d.orderDetails?.total_price || 100,
+              total_price: d.orderDetails?.total_price || 0,
               unit_price: d.orderDetails?.unit_price || 0,
               base_price: d.orderDetails?.base_price || 0,
               currency: d.orderDetails?.currency || "EUR",
