@@ -17,6 +17,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log("=== Starting create-checkout function ===");
+    
     // 🧩 Step 1: Authenticate user
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -50,66 +52,105 @@ serve(async (req) => {
     }
 
     const user = userData.user;
-    console.log("User authenticated:", user.email);
+    console.log("✅ User authenticated:", user.email);
 
     // 🧩 Step 2: Parse request body
     const body = await req.json();
-    const { orderId } = body;
+    console.log("Request body:", body);
     
-    if (!orderId) {
-      console.error("Missing orderId in request body:", body);
-      throw new Error("Missing orderId in request");
+    const { orderIds } = body;
+    
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      console.error("Invalid orderIds in request body:", body);
+      throw new Error("Missing or invalid orderIds in request");
     }
 
-    console.log("Processing checkout for orderId:", orderId);
+    console.log("Processing checkout for", orderIds.length, "orders:", orderIds);
 
-    // 🧩 Step 3: Fetch order details
-    const { data: order, error: orderError } = await supabaseClient
+    // 🧩 Step 3: Fetch all orders
+    const { data: orders, error: ordersError } = await supabaseClient
       .from("orders")
       .select("*")
-      .eq("id", orderId)
-      .single();
+      .in("id", orderIds);
 
-    if (orderError) {
-      console.error("Order lookup failed:", orderError);
-      throw new Error("Order not found: " + orderError.message);
+    if (ordersError) {
+      console.error("Orders lookup failed:", ordersError);
+      throw new Error("Orders not found: " + ordersError.message);
     }
     
-    if (!order) {
-      console.error("No order data returned for id:", orderId);
-      throw new Error("Order not found");
+    if (!orders || orders.length === 0) {
+      console.error("No orders data returned for ids:", orderIds);
+      throw new Error("Orders not found");
     }
 
-    console.log("Order found:", order.id, "Total:", order.total_price);
+    console.log("✅ Found", orders.length, "orders");
 
-    // Optionally fetch design details if design_id exists
-    let wristbandType = "silicone";
-    if (order.design_id) {
-      try {
-        const { data: design } = await supabaseClient
-          .from("designs")
-          .select("wristband_type")
-          .eq("id", order.design_id)
-          .single();
-        if (design?.wristband_type) {
-          wristbandType = design.wristband_type;
-        }
-      } catch (e) {
-        console.warn("Failed to fetch design details, using default:", e);
+    // 🧩 Step 4: Calculate total and prepare line items
+    let totalAmount = 0;
+    const lineItems: any[] = [];
+    const currency = (orders[0].currency || "EUR").toLowerCase();
+
+    for (const order of orders) {
+      // Validate order total
+      if (!order.total_price || order.total_price <= 0) {
+        console.error("Invalid total_price for order:", order.id, order.total_price);
+        throw new Error(`Invalid order total price for order ${order.id}: ${order.total_price}`);
       }
+
+      const orderAmount = Math.round(Number(order.total_price) * 100); // convert to cents
+      totalAmount += orderAmount;
+
+      // Fetch design details if design_id exists
+      let wristbandType = "silicone";
+      if (order.design_id) {
+        try {
+          const { data: design } = await supabaseClient
+            .from("designs")
+            .select("wristband_type")
+            .eq("id", order.design_id)
+            .single();
+          if (design?.wristband_type) {
+            wristbandType = design.wristband_type;
+          }
+        } catch (e) {
+          console.warn("Failed to fetch design details for order", order.id, e);
+        }
+      }
+
+      // Build product description
+      let description = `Custom ${wristbandType} wristband`;
+      if (order.print_type && order.print_type !== "none") {
+        description += ` with ${
+          order.print_type === "black" ? "black print" : "full color print"
+        }`;
+      }
+      if (order.has_secure_guests) {
+        description += " + secure guests option";
+      }
+      if (order.quantity) {
+        description += ` (${order.quantity} pcs)`;
+      }
+
+      // Add line item
+      lineItems.push({
+        price_data: {
+          currency,
+          product_data: {
+            name: `EU Wristbands - ${
+              wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)
+            }`,
+            description,
+          },
+          unit_amount: orderAmount,
+        },
+        quantity: 1,
+      });
     }
 
-    // Validate total_price
-    if (!order.total_price || order.total_price <= 0) {
-      throw new Error("Invalid order total price: " + order.total_price);
-    }
+    console.log("✅ Total amount:", totalAmount, "cents, currency:", currency);
+    console.log("✅ Line items prepared:", lineItems.length);
 
-    const totalAmount = Math.round(Number(order.total_price) * 100); // convert to cents
-    const currency = (order.currency || "USD").toLowerCase();
-
-    console.log("Stripe amount:", totalAmount, "cents, currency:", currency);
-
-    // 🧩 Step 4: Initialize Stripe
+    // 🧩 Step 5: Initialize Stripe
     const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
     if (!stripeSecret) {
       console.error("STRIPE_SECRET_KEY not configured");
@@ -121,7 +162,7 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    // 🧩 Step 5: Retrieve or create a Stripe customer
+    // 🧩 Step 6: Retrieve or create a Stripe customer
     let customerId: string | undefined;
     
     if (user.email) {
@@ -133,7 +174,7 @@ serve(async (req) => {
         
         if (customers.data.length > 0) {
           customerId = customers.data[0].id;
-          console.log("Existing Stripe customer found:", customerId);
+          console.log("✅ Existing Stripe customer found:", customerId);
         } else {
           console.log("No existing Stripe customer, will create during checkout");
         }
@@ -142,43 +183,18 @@ serve(async (req) => {
       }
     }
 
-    // 🧩 Step 6: Build product description
-    let description = `Custom ${wristbandType} wristband`;
-    if (order.print_type && order.print_type !== "none") {
-      description += ` with ${
-        order.print_type === "black" ? "black print" : "full color print"
-      }`;
-    }
-    if (order.has_secure_guests) {
-      description += " + secure guests option";
-    }
-
     // Get origin for redirect URLs
     const origin = req.headers.get("origin") || Deno.env.get("SITE_URL") || "http://localhost:5173";
     console.log("Using origin for redirects:", origin);
 
     // 🧩 Step 7: Create Stripe Checkout Session
     const sessionParams: any = {
-      line_items: [
-        {
-          price_data: {
-            currency,
-            product_data: {
-              name: `EU Wristbands - ${
-                wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)
-              }`,
-              description,
-            },
-            unit_amount: totalAmount,
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       mode: "payment",
       success_url: `${origin}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/design-studio?canceled=true`,
       metadata: {
-        orderId,
+        orderIds: orderIds.join(","),
         userId: user.id,
       },
     };
@@ -190,10 +206,17 @@ serve(async (req) => {
       sessionParams.customer_email = user.email;
     }
 
-    console.log("Creating Stripe checkout session...");
+    console.log("Creating Stripe checkout session with params:", {
+      lineItemsCount: lineItems.length,
+      mode: sessionParams.mode,
+      customerEmail: sessionParams.customer_email,
+      customerId: sessionParams.customer,
+    });
+
     const session = await stripe.checkout.sessions.create(sessionParams);
 
     console.log("✅ Checkout session created:", session.id);
+    console.log("✅ Checkout URL:", session.url);
 
     return new Response(
       JSON.stringify({ url: session.url, sessionId: session.id }),
@@ -204,6 +227,8 @@ serve(async (req) => {
     );
   } catch (error: any) {
     console.error("❌ Error in create-checkout:", error);
+    console.error("Error stack:", error.stack);
+    
     return new Response(
       JSON.stringify({ 
         error: error.message || "Internal server error",
