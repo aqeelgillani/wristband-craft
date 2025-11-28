@@ -1,5 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { Resend } from "https://esm.sh/resend@2.0.0";
+
+const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -73,6 +76,74 @@ serve(async (req) => {
       .eq("id", orderId)
       .select()
       .single();
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    // --- Send Status Update Email to User ---
+    try {
+      // Re-initialize client with service role key to fetch user email (RLS bypass)
+      const serviceRoleClient = createClient(
+        Deno.env.get("SUPABASE_URL") ?? "",
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
+      );
+
+      const { data: orderDetails, error: fetchError } = await serviceRoleClient
+        .from("orders")
+        .select(`
+          *,
+          profiles:user_id (email, full_name)
+        `)
+        .eq("id", orderId)
+        .single();
+
+      if (fetchError || !orderDetails || !orderDetails.profiles?.email) {
+        console.error("Failed to fetch order details for status email:", fetchError);
+      } else {
+        const userEmail = orderDetails.profiles.email;
+        const userName = orderDetails.profiles.full_name || "Customer";
+        const currencySymbol = orderDetails.currency === "USD" ? "$" : orderDetails.currency === "EUR" ? "€" : "£";
+        
+        const emailHtml = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h1 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">Order Status Update!</h1>
+            
+            <p>Dear ${userName},</p>
+            
+            <p>The status of your order <strong>#${orderId.substring(0, 8)}</strong> has been updated to: <strong>${status.toUpperCase()}</strong>.</p>
+            
+            <h2 style="color: #555; margin-top: 30px;">Order Details</h2>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 8px;">
+              <p><strong>Order ID:</strong> ${orderId}</p>
+              <p><strong>New Status:</strong> <span style="color: #4CAF50; font-weight: bold;">${status.toUpperCase()}</span></p>
+              <p><strong>Total Amount:</strong> ${currencySymbol}${orderDetails.total_price.toFixed(2)}</p>
+              ${adminNotes ? `<p><strong>Supplier Note:</strong> ${adminNotes}</p>` : ''}
+            </div>
+            
+            <p style="margin-top: 30px;">You can view the full details of your order in your dashboard.</p>
+            
+            <p style="margin-top: 20px;">Best regards,<br><strong>EU Wristbands Team</strong></p>
+          </div>
+        `;
+
+        const { error: emailError } = await resend.emails.send({
+          from: "EU Wristbands <onboarding@resend.dev>",
+          to: [userEmail],
+          subject: `Update: Your Order #${orderId.substring(0, 8)} is now ${status.toUpperCase()}`,
+          html: emailHtml,
+        });
+
+        if (emailError) {
+          console.error("Error sending status update email:", emailError);
+        } else {
+          console.log(`Status update email sent successfully to ${userEmail}`);
+        }
+      }
+    } catch (e) {
+      console.error("General error in status update email logic:", e);
+    }
+    // --- End Send Status Update Email to User ---
 
     if (updateError) {
       throw updateError;

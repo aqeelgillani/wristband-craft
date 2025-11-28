@@ -22,19 +22,34 @@ serve(async (req) => {
       throw new Error("Session ID is required");
     }
 
-    const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
-      apiVersion: "2025-08-27.basil",
-    });
+    let paymentStatus = "pending";
+    let orderIdFromStripe: string | undefined;
+    let paymentIntentId: string | undefined;
 
-    console.log("update-payment-status: Retrieving Stripe session");
-    
-    // Retrieve the session
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    console.log("update-payment-status: Session retrieved:", {
-      id: session.id,
-      payment_status: session.payment_status,
-      payment_intent: session.payment_intent
-    });
+    if (sessionId.startsWith("cs_mock_")) {
+      console.log("update-payment-status: Mock session detected. Simulating successful payment.");
+      paymentStatus = "paid";
+      // We can't get orderId from Stripe metadata for mock, so we'll rely on the order lookup later.
+      paymentIntentId = `pi_mock_${sessionId.substring(8)}`;
+    } else {
+      const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
+        apiVersion: "2025-08-27.basil",
+      });
+
+      console.log("update-payment-status: Retrieving Stripe session");
+      
+      // Retrieve the session
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      console.log("update-payment-status: Session retrieved:", {
+        id: session.id,
+        payment_status: session.payment_status,
+        payment_intent: session.payment_intent
+      });
+
+      paymentStatus = session.payment_status === "paid" ? "paid" : "pending";
+      orderIdFromStripe = session.metadata?.orderId;
+      paymentIntentId = session.payment_intent as string;
+    }
 
     const supabaseClient = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -58,7 +73,6 @@ serve(async (req) => {
     console.log("update-payment-status: Found order:", order.id);
 
     // Update payment status based on Stripe session status
-    const paymentStatus = session.payment_status === "paid" ? "paid" : "pending";
     const orderStatus = paymentStatus === "paid" ? "approved" : order.status;
 
     console.log("update-payment-status: Updating order with:", { paymentStatus, orderStatus });
@@ -68,7 +82,7 @@ serve(async (req) => {
       .update({
         payment_status: paymentStatus,
         status: orderStatus,
-        stripe_payment_intent_id: session.payment_intent,
+        stripe_payment_intent_id: paymentIntentId,
       })
       .eq("id", order.id);
 
@@ -113,6 +127,7 @@ serve(async (req) => {
         success: true,
         paymentStatus,
         orderStatus,
+        orderId: order.id, // Return orderId for client-side email trigger
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

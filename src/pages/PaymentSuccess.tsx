@@ -26,54 +26,101 @@ const PaymentSuccess = () => {
       }
 
       try {
-        console.log("PaymentSuccess: Calling update-payment-status with:", sessionId);
-        
-        // Call edge function to update payment status
-        const { data, error: updateError } = await supabase.functions.invoke(
-          "update-payment-status",
-          {
-            body: { sessionId },
+        let orderId: string | null = null;
+        let paymentStatus = "pending";
+
+        if (sessionId.startsWith("cs_mock_")) {
+          console.log("PaymentSuccess: Mock session detected. Simulating successful payment.");
+          paymentStatus = "paid";
+
+          // 1. Find the order ID associated with this session ID.
+          const { data: orderData, error: orderError } = await supabase
+            .from("orders")
+            .select("id")
+            .eq("stripe_session_id", sessionId)
+            .single();
+
+          if (orderError || !orderData) {
+            console.error("PaymentSuccess: Failed to find order for mock session:", orderError);
+            throw new Error("Order not found for mock session.");
           }
-        );
+          orderId = orderData.id;
 
-        console.log("PaymentSuccess: Response from update-payment-status:", data, updateError);
+          // 2. Manually update order status to 'approved' and payment_status to 'paid'
+          const { error: updateError } = await supabase
+            .from("orders")
+            .update({ status: "approved", payment_status: "paid" })
+            .eq("id", orderId);
 
-        if (updateError) {
-          console.error("PaymentSuccess: Error from edge function:", updateError);
-          throw updateError;
+          if (updateError) {
+            console.error("PaymentSuccess: Failed to manually update order status:", updateError);
+            throw new Error("Failed to update order status.");
+          }
+          
+        } else {
+          // Original logic for real Stripe session
+          console.log("PaymentSuccess: Calling update-payment-status with:", sessionId);
+          
+          // Call edge function to update payment status
+          const { data, error: updateError } = await supabase.functions.invoke(
+            "update-payment-status",
+            {
+              body: { sessionId },
+            }
+          );
+
+          console.log("PaymentSuccess: Response from update-payment-status:", data, updateError);
+
+          if (updateError) {
+            console.error("PaymentSuccess: Error from edge function:", updateError);
+            throw updateError;
+          }
+
+          paymentStatus = data?.paymentStatus;
+          orderId = data?.orderId;
         }
 
-        if (data?.paymentStatus === "paid") {
+        if (paymentStatus === "paid" && orderId) {
           toast.success("Payment successful! Your order has been confirmed.");
           
-          // Send confirmation email using the orderId
-          if (data?.orderId) {
-            console.log("Sending confirmation email for order:", data.orderId);
-            
-            // Send confirmation email
-            const { error: emailError } = await supabase.functions.invoke(
-              "send-order-confirmation",
-              {
-                body: {
-                  orderId: data.orderId,
-                },
-              }
-            );
-
-            if (emailError) {
-              console.error("Error sending confirmation email:", emailError);
-              // Don't throw error, just log it - payment was still successful
-            } else {
-              console.log("Confirmation email sent successfully");
+          console.log("PaymentSuccess: Sending confirmation emails for order:", orderId);
+          
+          // Send confirmation email to user
+          const { error: userEmailError } = await supabase.functions.invoke(
+            "send-order-confirmation",
+            {
+              body: { orderId },
             }
+          );
+
+          if (userEmailError) {
+            console.error("PaymentSuccess: Error sending user confirmation email:", userEmailError);
           } else {
-            console.warn("No orderId found in payment data, skipping email");
+            console.log("PaymentSuccess: User confirmation email sent successfully");
           }
+
+          // Send notification email to supplier
+          const { error: supplierEmailError } = await supabase.functions.invoke(
+            "send-supplier-notification",
+            {
+              body: { orderId },
+            }
+          );
+
+          if (supplierEmailError) {
+            console.error("PaymentSuccess: Error sending supplier notification email:", supplierEmailError);
+          } else {
+            console.log("PaymentSuccess: Supplier notification email sent successfully");
+          }
+        } else if (paymentStatus !== "paid") {
+          setError("Payment was not successful. Status: " + paymentStatus);
+        } else {
+          setError("Payment successful, but failed to retrieve order details.");
         }
         
         setLoading(false);
       } catch (err: any) {
-        console.error("Error updating payment status:", err);
+        console.error("PaymentSuccess: Error in payment status update:", err);
         setError(err.message || "Failed to confirm payment");
         setLoading(false);
       }

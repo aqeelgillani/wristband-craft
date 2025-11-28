@@ -39,6 +39,7 @@ serve(async (req) => {
 
     const user = userData.user;
     console.log("User authenticated:", user.email);
+    console.log("Request body:", await req.clone().json());
 
     // 🧩 Step 2: Parse request body
     const { orderId } = await req.json();
@@ -53,6 +54,7 @@ serve(async (req) => {
 
     if (orderError || !order) {
       console.error("Order lookup failed:", orderError);
+      throw new Error(`Order not found for ID: ${orderId}`);
       throw new Error("Order not found");
     }
 
@@ -69,7 +71,7 @@ serve(async (req) => {
           wristbandType = design.wristband_type;
         }
       } catch (e) {
-        console.warn("Failed to fetch design details, using default");
+        console.warn("Failed to fetch design details for design ID:", order.design_id, e);
       }
     }
 
@@ -78,7 +80,10 @@ serve(async (req) => {
 
     // 🧩 Step 4: Initialize Stripe
     const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
-    if (!stripeSecret) throw new Error("Stripe secret key not configured");
+    if (!stripeSecret) {
+      console.error("Stripe secret key not configured");
+      throw new Error("Stripe secret key not configured");
+    }
 
     const stripe = new Stripe(stripeSecret, {
       apiVersion: "2024-09-30.acacia", // ✅ valid, stable version
@@ -133,6 +138,32 @@ serve(async (req) => {
       },
     });
 
+    console.log("Stripe checkout session input:", {
+      customer: customerId,
+      customer_email: customerId ? undefined : user.email,
+      line_items: [
+        {
+          price_data: {
+            currency,
+            product_data: {
+              name: `EU Wristbands - ${
+                wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)
+              }`,
+              description,
+            },
+            unit_amount: totalAmount,
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      success_url: `${req.headers.get("origin")}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.get("origin")}/design-studio?canceled=true`,
+      metadata: {
+        orderId,
+        userId: user.id,
+      },
+    });
     console.log("✅ Checkout session created:", session.id);
 
     return new Response(

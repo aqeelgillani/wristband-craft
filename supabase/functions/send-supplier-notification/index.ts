@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
+import { jsPDF } from "https://esm.sh/jspdf@2.5.1";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
 
 // Initialize Resend
@@ -12,6 +13,60 @@ const corsHeaders = {
 };
 
 // Initialize Supabase client with service role key
+// Helper function to generate PDF
+const generateSupplierPDF = (order, shippingAddress) => {
+  const doc = new jsPDF();
+  
+  doc.setFontSize(18);
+  doc.text("Production Order Details", 10, 10);
+  
+  doc.setFontSize(12);
+  let y = 20;
+  
+  const addText = (label, value) => {
+    doc.text(`${label}: ${value}`, 10, y);
+    y += 7;
+  };
+
+  addText("Order ID", order.id.substring(0, 8));
+  addText("Customer Name", order.profiles?.full_name || "N/A");
+  addText("Customer Email", order.profiles?.email || "N/A");
+  addText("Quantity", `${order.quantity} pcs`);
+  addText("Wristband Type", order.designs?.wristband_type || 'N/A');
+  addText("Wristband Color", order.designs?.wristband_color || 'N/A');
+  addText("Print Type", order.print_type === 'black' ? 'Black Print' : order.print_type === 'full_color' ? 'Full Color Print' : 'None');
+  if (order.designs?.custom_text) {
+    addText("Custom Text", order.designs.custom_text);
+  }
+  if (order.has_secure_guests) {
+    addText("Security Feature", "QR Code / Secure Guests Enabled");
+  }
+  
+  y += 5;
+  doc.setFontSize(14);
+  doc.text("Shipping Address", 10, y);
+  y += 5;
+  doc.setFontSize(12);
+  addText("Name", shippingAddress.name);
+  addText("Street", shippingAddress.address);
+  addText("City", shippingAddress.city);
+  addText("Zip/Postal Code", shippingAddress.zipCode);
+  addText("Country", shippingAddress.country);
+  addText("Phone", shippingAddress.phone);
+
+  // NOTE: Image embedding in jspdf in Deno is complex. 
+  // For now, I will add a placeholder text and a link to the design image.
+  y += 5;
+  doc.setFontSize(14);
+  doc.text("Design Details (See link below for image)", 10, y);
+  y += 5;
+  addText("Design URL", order.designs?.design_url || "N/A");
+  
+  // Return the PDF as a base64 encoded string
+  return doc.output('datauristring').split(',')[1];
+};
+
+const supabaseClient = createClient(
 const supabaseClient = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_KEY") ?? "" // must be service role key
@@ -31,6 +86,7 @@ serve(async (req) => {
   .from("orders")
   .select(`
     *,
+    shipping_address,
     profiles:user_id (email, full_name),
     designs:design_id (design_url, wristband_type, wristband_color, custom_text),
     suppliers:supplier_id (company_name, contact_email)
@@ -41,6 +97,16 @@ serve(async (req) => {
 let order;
 
 if (!fetchedOrder || orderError || testMode) {
+  // Check if shipping_address is present in fetchedOrder
+  const shippingAddress = fetchedOrder?.shipping_address || {
+    name: "Test Name",
+    address: "123 Test St",
+    city: "Test City",
+    state: "Test State",
+    zipCode: "12345",
+    country: "Test Country",
+    phone: "1234567890",
+  };
   console.warn("Order not found or test mode enabled, using dummy order");
 
   order = {
@@ -52,6 +118,7 @@ if (!fetchedOrder || orderError || testMode) {
     status: "New",
     has_secure_guests: false,
     print_type: "black",
+    shipping_address: shippingAddress,
     designs: {
       wristband_type: "Silicone",
       wristband_color: "Red",
@@ -71,6 +138,8 @@ if (!fetchedOrder || orderError || testMode) {
 } else {
   order = fetchedOrder;
 }
+
+const shippingAddress = order.shipping_address;
 
     const supplierEmail = order.suppliers?.contact_email || "aqeelg136@gmail.com";
     const userName = order.profiles?.full_name || "Customer";
@@ -109,6 +178,7 @@ if (!fetchedOrder || orderError || testMode) {
       </div>
     `;
 
+    const pdfBase64 = generateSupplierPDF(order, shippingAddress);
     const recipient = testMode ? ["aqeelg136@gmail.com"] : [supplierEmail];
 
     console.log(`Sending ${testMode ? "test" : "real"} email to:`, recipient);
@@ -118,6 +188,14 @@ if (!fetchedOrder || orderError || testMode) {
       to: recipient,
       subject: `${testMode ? "🧪 TEST: " : ""}New Order #${order.id.substring(0, 8)} - ${order.quantity} Wristbands`,
       html: testMode
+        ? `<p style="color:#888;">This is a TEST email. Actual supplier: ${supplierEmail}</p>${emailHtml}`
+        : emailHtml,
+      attachments: [
+        {
+          filename: `Production_Order_${order.id.substring(0, 8)}.pdf`,
+          content: pdfBase64,
+        },
+      ],
         ? `<p style="color:#888;">This is a TEST email. Actual supplier: ${supplierEmail}</p>${emailHtml}`
         : emailHtml,
     });

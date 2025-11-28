@@ -37,6 +37,7 @@ serve(async (req) => {
       .from("orders")
       .select(`
         *,
+        shipping_address,
         profiles:user_id (email, full_name),
         designs:design_id (design_url, wristband_type, wristband_color),
         suppliers:supplier_id (company_name, contact_email)
@@ -114,7 +115,7 @@ serve(async (req) => {
 
     const { error: emailError } = await resend.emails.send({
       from: "EU Wristbands <onboarding@resend.dev>",
-     to: ["aqeelg136@gmail.com"],
+     to: [userEmail],
       subject: `Payment Successful - Order #${order.id.substring(0, 8)}`,
       html: emailHtml,
     });

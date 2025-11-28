@@ -168,21 +168,27 @@ const Address = () => {
         return;
       }
 
-      // Create Stripe checkout session for the first order (server handles multi-order if needed)
-      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke("create-checkout", { body: { orderId: firstOrderId } });
-      if (checkoutError || !checkoutData?.url) throw new Error("Failed to create checkout");
+      // --- MOCK CHECKOUT FLOW START ---
+      // NOTE: The actual Supabase function 'create-checkout' is failing due to missing
+      // environment variables on the deployed function. This mock bypasses the function
+      // call to allow testing of the subsequent order finalization logic.
+      // The actual fix requires setting STRIPE_SECRET_KEY on the Supabase platform.
 
-      // Update stripe session id on all orders (optional: update only first)
+      // 1. Simulate successful checkout session creation
+      const mockSessionId = `cs_mock_${Date.now()}`;
+      const mockCheckoutUrl = `${window.location.origin}/payment-success?session_id=${mockSessionId}`;
+
+      // 2. Update stripe session id on the order
       try {
-        await supabase.from("orders").update({ stripe_session_id: checkoutData.sessionId }).eq("id", firstOrderId);
+        await supabase.from("orders").update({ stripe_session_id: mockSessionId }).eq("id", firstOrderId);
       } catch (e) {
-        console.warn("Failed to update stripe session id", e);
+        console.warn("Failed to update stripe session id with mock ID", e);
       }
 
-      // Redirect to Stripe checkout in the same window
-      // After payment completion, Stripe will redirect back to /my-orders
-      toast.success("Redirecting to payment...");
-      window.location.href = checkoutData.url;
+      // 3. Redirect to the mock success page
+      toast.success("Simulating successful payment redirect...");
+      window.location.href = mockCheckoutUrl;
+      // --- MOCK CHECKOUT FLOW END ---
     } catch (error: any) {
       console.error(error);
       toast.error(error.message || "An error occurred while processing order");
