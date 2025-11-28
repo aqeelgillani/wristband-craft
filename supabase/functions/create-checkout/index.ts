@@ -15,6 +15,8 @@ serve(async (req) => {
   }
 
   try {
+    console.log("=== Starting create-checkout function ===");
+    
     // 🧩 Step 1: Authenticate user
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
@@ -48,18 +50,18 @@ serve(async (req) => {
     }
 
     const user = userData.user;
-    console.log("User authenticated:", user.email);
+    console.log("✅ User authenticated:", user.email);
 
     // 🧩 Step 2: Parse request body
     const body = await req.json();
-    const { orderIds } = body; // Expecting an array of order IDs
+    const { orderIds } = body;
     
-    if (!orderIds || orderIds.length === 0) {
-      console.error("Missing orderIds in request body:", body);
-      throw new Error("Missing orderIds in request");
+    if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+      console.error("Invalid orderIds in request body:", body);
+      throw new Error("Missing or invalid orderIds in request");
     }
 
-    console.log("Processing checkout for orderIds:", orderIds);
+    console.log("Processing checkout for", orderIds.length, "orders:", orderIds);
 
     // 🧩 Step 3: Fetch all orders
     const { data: orders, error: ordersError } = await supabaseClient
@@ -67,24 +69,31 @@ serve(async (req) => {
       .select("*")
       .in("id", orderIds);
 
-    if (ordersError || !orders || orders.length === 0) {
+    if (ordersError) {
       console.error("Orders lookup failed:", ordersError);
-      throw new Error(`Orders not found for IDs: ${orderIds.join(", ")}`);
+      throw new Error("Orders not found: " + ordersError.message);
+    }
+    
+    if (!orders || orders.length === 0) {
+      console.error("No orders data returned for ids:", orderIds);
+      throw new Error("Orders not found");
     }
 
-    console.log("Found orders:", orders.map(o => o.id));
+    console.log("✅ Found", orders.length, "orders");
 
-    // 🧩 Step 4: Prepare line items and calculate total amount
-    const lineItems: any[] = [];
+    // 🧩 Step 4: Calculate total and prepare line items
     let totalAmount = 0;
-    const currency = (orders[0].currency || "USD").toLowerCase();
+    const lineItems: any[] = [];
+    const currency = (orders[0].currency || "EUR").toLowerCase();
 
     for (const order of orders) {
+      // Validate order total
       if (!order.total_price || order.total_price <= 0) {
+        console.error("Invalid total_price for order:", order.id, order.total_price);
         throw new Error(`Invalid order total price for order ${order.id}: ${order.total_price}`);
       }
 
-      const orderAmount = Math.round(Number(order.total_price) * 100);
+      const orderAmount = Math.round(Number(order.total_price) * 100); // convert to cents
       totalAmount += orderAmount;
 
       // Fetch design details if design_id exists
@@ -100,7 +109,7 @@ serve(async (req) => {
             wristbandType = design.wristband_type;
           }
         } catch (e) {
-          console.warn("⚠️ Failed to fetch design for order", order.id, "using default");
+          console.warn("Failed to fetch design details for order", order.id, e);
         }
       }
 
@@ -112,7 +121,7 @@ serve(async (req) => {
         }`;
       }
       if (order.has_secure_guests) {
-        description += " + secure guests";
+        description += " + secure guests option";
       }
       if (order.quantity) {
         description += ` (${order.quantity} pcs)`;
@@ -123,7 +132,9 @@ serve(async (req) => {
         price_data: {
           currency,
           product_data: {
-            name: `EU Wristbands - ${wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)}`,
+            name: `EU Wristbands - ${
+              wristbandType.charAt(0).toUpperCase() + wristbandType.slice(1)
+            }`,
             description,
           },
           unit_amount: orderAmount,
@@ -132,8 +143,8 @@ serve(async (req) => {
       });
     }
 
-    console.log("✅ Total amount:", totalAmount, "cents");
-    console.log("✅ Total line items:", lineItems.length);
+    console.log("✅ Total amount:", totalAmount, "cents, currency:", currency);
+    console.log("✅ Line items prepared:", lineItems.length);
 
     // 🧩 Step 5: Initialize Stripe
     const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
@@ -148,7 +159,7 @@ serve(async (req) => {
     });
     console.log("✅ Stripe initialized");
 
-    // 🧩 Step 6: Retrieve or create Stripe customer
+    // 🧩 Step 6: Retrieve or create a Stripe customer
     let customerId: string | undefined;
     
     if (user.email) {
@@ -161,7 +172,7 @@ serve(async (req) => {
         
         if (customers.data.length > 0) {
           customerId = customers.data[0].id;
-          console.log("✅ Found existing Stripe customer:", customerId);
+          console.log("✅ Existing Stripe customer found:", customerId);
         } else {
           console.log("No existing customer, will create during checkout");
         }
@@ -192,17 +203,17 @@ serve(async (req) => {
       sessionParams.customer_email = user.email;
     }
 
-    console.log("Creating Stripe session with:", {
-      lineItems: lineItems.length,
+    console.log("Creating Stripe checkout session with params:", {
+      lineItemsCount: lineItems.length,
       mode: sessionParams.mode,
-      customer: sessionParams.customer,
-      customer_email: sessionParams.customer_email,
+      customerEmail: sessionParams.customer_email,
+      customerId: sessionParams.customer,
     });
 
     const session = await stripe.checkout.sessions.create(sessionParams);
 
     console.log("✅ Checkout session created:", session.id);
-    console.log("✅ Session URL:", session.url);
+    console.log("✅ Checkout URL:", session.url);
 
     return new Response(
       JSON.stringify({ 
@@ -216,8 +227,7 @@ serve(async (req) => {
     );
 
   } catch (error: any) {
-    console.error("❌❌❌ FATAL ERROR in create-checkout ❌❌❌");
-    console.error("Error message:", error.message);
+    console.error("❌ Error in create-checkout:", error);
     console.error("Error stack:", error.stack);
     
     return new Response(
