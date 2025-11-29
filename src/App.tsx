@@ -20,11 +20,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 import { supabase } from './integrations/supabase/client';
 
-async function clearOldSessions() {
-  await supabase.auth.signOut();
-}
-
-clearOldSessions();
+// Removed clearOldSessions() to fix persistent login issue
 
 
 const queryClient = new QueryClient();

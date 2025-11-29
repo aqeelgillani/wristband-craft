@@ -1,7 +1,8 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { Resend } from "https://esm.sh/resend@2.0.0";
-import { jsPDF } from "https://esm.sh/jspdf@2.5.1";
+import { fetch } from "https://esm.sh/node-fetch@3.3.2";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.2";
+import { jsPDF } from "https://esm.sh/jspdf@2.5.1";
 
 // Initialize Resend
 const resend = new Resend(Deno.env.get("RESEND_API_KEY"));
@@ -12,7 +13,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-// Initialize Supabase client with service role key
 // Helper function to generate PDF
 const generateSupplierPDF = (order, shippingAddress) => {
   const doc = new jsPDF();
@@ -58,7 +58,7 @@ const generateSupplierPDF = (order, shippingAddress) => {
   // For now, I will add a placeholder text and a link to the design image.
   y += 5;
   doc.setFontSize(14);
-  doc.text("Design Details (See link below for image)", 10, y);
+  doc.text("Design Details (See attached image and link)", 10, y);
   y += 5;
   addText("Design URL", order.designs?.design_url || "N/A");
   
@@ -66,7 +66,7 @@ const generateSupplierPDF = (order, shippingAddress) => {
   return doc.output('datauristring').split(',')[1];
 };
 
-const supabaseClient = createClient(
+// Initialize Supabase client with service role key
 const supabaseClient = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
   Deno.env.get("SUPABASE_SERVICE_KEY") ?? "" // must be service role key
@@ -151,7 +151,7 @@ const shippingAddress = order.shipping_address;
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h1 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">New Order Received! 🎉</h1>
         <p>Dear ${supplierName},</p>
-        <p>A new custom wristband order has been assigned to you. Please review the details below:</p>
+        <p>A new custom wristband order has been assigned to you. Please review the details below and the attached production PDF and design image.</p>
         <h2 style="color: #555; margin-top: 20px;">Order Details</h2>
         <div style="background: #f5f5f5; padding: 15px; border-radius: 8px;">
           <p><strong>Order ID:</strong> ${order.id.substring(0, 8)}</p>
@@ -169,6 +169,7 @@ const shippingAddress = order.shipping_address;
         </div>
         ${order.designs?.design_url ? `
         <h2 style="color: #555; margin-top: 20px;">Design Preview</h2>
+        <p>The design image is attached to this email.</p>
         <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; text-align: center;">
           <img src="${order.designs.design_url}" alt="Wristband Design" style="max-width: 100%; height: auto; border-radius: 8px;" />
         </div>` : ''}
@@ -181,21 +182,41 @@ const shippingAddress = order.shipping_address;
     const pdfBase64 = generateSupplierPDF(order, shippingAddress);
     const recipient = testMode ? ["aqeelg136@gmail.com"] : [supplierEmail];
 
+    // --- Attachment Logic ---
+    const attachments = [];
+    
+    // 1. Attach Production PDF
+    attachments.push({
+      filename: `Production_Order_${order.id.substring(0, 8)}.pdf`,
+      content: pdfBase64,
+    });
+
+    // 2. Attach Design Image
+    if (order.designs?.design_url) {
+      try {
+        const response = await fetch(order.designs.design_url);
+        const imageBlob = await response.blob();
+        const imageBuffer = await imageBlob.arrayBuffer();
+        
+        attachments.push({
+          filename: `design-preview-${order.id.substring(0, 8)}.png`,
+          content: Buffer.from(imageBuffer).toString("base64"),
+        });
+        console.log("✅ Design image attached successfully.");
+      } catch (e) {
+        console.error("❌ Failed to fetch or attach design image:", e);
+      }
+    }
+    // --- End Attachment Logic ---
+
     console.log(`Sending ${testMode ? "test" : "real"} email to:`, recipient);
 
     const { error: emailError } = await resend.emails.send({
       from: "EU Wristbands <onboarding@resend.dev>",
       to: recipient,
       subject: `${testMode ? "🧪 TEST: " : ""}New Order #${order.id.substring(0, 8)} - ${order.quantity} Wristbands`,
+      attachments: attachments,
       html: testMode
-        ? `<p style="color:#888;">This is a TEST email. Actual supplier: ${supplierEmail}</p>${emailHtml}`
-        : emailHtml,
-      attachments: [
-        {
-          filename: `Production_Order_${order.id.substring(0, 8)}.pdf`,
-          content: pdfBase64,
-        },
-      ],
         ? `<p style="color:#888;">This is a TEST email. Actual supplier: ${supplierEmail}</p>${emailHtml}`
         : emailHtml,
     });
