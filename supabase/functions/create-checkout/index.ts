@@ -66,8 +66,8 @@ serve(async (req) => {
       );
     }
 
-    // Create Supabase client
-    const supabaseClient = createClient(supabaseUrl, supabaseKey, {
+    // Create Supabase client with service role for full access
+    const supabaseClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || supabaseKey, {
       global: {
         headers: { Authorization: authHeader }
       }

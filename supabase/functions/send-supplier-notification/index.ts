@@ -69,7 +69,7 @@ const generateSupplierPDF = (order, shippingAddress) => {
 // Initialize Supabase client with service role key
 const supabaseClient = createClient(
   Deno.env.get("SUPABASE_URL") ?? "",
-  Deno.env.get("SUPABASE_SERVICE_KEY") ?? "" // must be service role key
+  Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "" // must be service role key
 );
 
 serve(async (req) => {

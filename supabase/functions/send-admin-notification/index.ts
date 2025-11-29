@@ -16,7 +16,7 @@ serve(async (req) => {
 
   const supabaseClient = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
-    Deno.env.get("SUPABASE_ANON_KEY") ?? ""
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
   );
 
   try {
@@ -85,7 +85,7 @@ serve(async (req) => {
         ` : ''}
         
         <div style="text-align: center; margin: 30px 0;">
-          <a href="https://mzhdqijjmdfiemeuworf.supabase.co/dashboard" 
+          <a href="${Deno.env.get('SUPABASE_URL') ?? 'https://supabase.co'}/dashboard" 
              style="background: #4CAF50; 
                     color: white; 
                     padding: 15px 30px; 
