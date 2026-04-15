@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch, setToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
-import { LogIn, Mail } from "lucide-react";
+import { LogIn } from "lucide-react";
 
 const Auth = () => {
   const navigate = useNavigate();
@@ -18,13 +18,10 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        navigate("/dashboard");
-      }
-    };
-    checkSession();
+    const token = localStorage.getItem('token');
+    if (token) {
+      navigate("/dashboard");
+    }
   }, [navigate]);
 
   const handleAuth = async (e: React.FormEvent) => {
@@ -40,44 +37,23 @@ const Auth = () => {
 
     try {
       if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/dashboard`,
-            data: { full_name: fullName },
-          },
+        const data = await apiFetch('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify({ email, password, fullName }),
         });
 
-        if (error) throw error;
-
-        if (data.user && !data.user.confirmed_at) {
-          try {
-            await supabase.functions.invoke("send-verification-email", {
-              body: {
-                email,
-                fullName,
-                confirmationUrl: `${window.location.origin}/auth/confirm?token=${data.user.id}`,
-              },
-            });
-          } catch (emailError) {
-            console.error("Error sending verification email:", emailError);
-          }
-        }
-
-        toast.success("Sign up successful! Please check your email to verify your account.");
+        setToken(data.accessToken);
+        toast.success('Sign up successful!');
+        navigate('/dashboard');
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
+        const data = await apiFetch('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email, password }),
         });
 
-        if (error) throw error;
-
-        if (data.session) {
-          toast.success("Signed in successfully!");
-          navigate("/dashboard");
-        }
+        setToken(data.accessToken);
+        toast.success('Signed in successfully!');
+        navigate('/dashboard');
       }
     } catch (error: any) {
       toast.error(error.message || "Authentication failed");
@@ -86,18 +62,8 @@ const Auth = () => {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    try {
-      setLoading(true);
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: `${window.location.origin}/dashboard` },
-      });
-      if (error) throw error;
-    } catch (error: any) {
-      toast.error(error.message || "Google sign-in failed");
-      setLoading(false);
-    }
+  const handleGoogleSignIn = () => {
+    toast.error('OAuth is not supported yet. Please use email and password.');
   };
 
   return (
@@ -184,7 +150,6 @@ const Auth = () => {
             onClick={handleGoogleSignIn}
             disabled={loading}
           >
-            <Mail className="h-4 w-4 mr-2" />
             Google
           </Button>
 

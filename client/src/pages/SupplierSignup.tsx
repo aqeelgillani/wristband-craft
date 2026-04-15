@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch, setToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -45,46 +45,23 @@ const SupplierSignup = () => {
     setLoading(true);
 
     try {
-      // Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.contactEmail,
-        password: formData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/admin`,
-          data: {
-            full_name: formData.companyName,
-          },
-        },
+      const data = await apiFetch('/suppliers/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          companyName: formData.companyName,
+          contactEmail: formData.contactEmail,
+          contactPhone: formData.contactPhone,
+          address: formData.address,
+          password: formData.password,
+        }),
       });
 
-      if (authError) throw authError;
-
-      if (!authData.user) throw new Error("User creation failed");
-
-      // Create supplier record
-      const { error: supplierError } = await supabase.from("suppliers").insert({
-        user_id: authData.user.id,
-        company_name: formData.companyName,
-        contact_email: formData.contactEmail,
-        contact_phone: formData.contactPhone,
-        address: formData.address,
-      });
-
-      if (supplierError) throw supplierError;
-
-      // Add supplier role
-      const { error: roleError } = await supabase.from("user_roles").insert({
-        user_id: authData.user.id,
-        role: "supplier",
-      });
-
-      if (roleError) throw roleError;
-
-      toast.success("Supplier account created successfully! Please check your email to verify.");
-      navigate("/supplier-login");
+      setToken(data.accessToken);
+      toast.success('Supplier account created successfully!');
+      navigate('/admin');
     } catch (error: any) {
-      console.error("Signup error:", error);
-      toast.error(error.message || "Failed to create supplier account");
+      console.error('Signup error:', error);
+      toast.error(error.message || 'Failed to create supplier account');
     } finally {
       setLoading(false);
     }

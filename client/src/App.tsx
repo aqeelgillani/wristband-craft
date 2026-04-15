@@ -18,7 +18,6 @@ import OrderSummary from "./pages/OrderSummary";
 import Address from "./pages/Address";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
-import { supabase } from './integrations/supabase/client';
 
 // Removed clearOldSessions() to fix persistent login issue
 

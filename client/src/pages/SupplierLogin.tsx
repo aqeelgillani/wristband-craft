@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch, setToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,21 +15,10 @@ const SupplierLogin = () => {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        // Check if user is supplier or admin
-        const { data: roles } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", session.user.id);
-        
-        if (roles && (roles.some(r => r.role === "admin") || roles.some(r => r.role === "supplier"))) {
-          navigate("/admin");
-        }
-      }
-    };
-    checkSession();
+    const token = localStorage.getItem('token');
+    if (token) {
+      navigate('/admin');
+    }
   }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -37,29 +26,22 @@ const SupplierLogin = () => {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const data = await apiFetch('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
       });
 
-      if (error) throw error;
-
-      // Check if user has supplier or admin role
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", data.user.id);
-
-      if (!roles || roles.length === 0 || !roles.some(r => r.role === "admin" || r.role === "supplier")) {
-        await supabase.auth.signOut();
-        toast.error("Access denied - Supplier or Admin only");
+      const roles = data.user?.roles || [];
+      if (!roles.some((role: string) => role === 'admin' || role === 'supplier')) {
+        toast.error('Access denied - Supplier or Admin only');
         return;
       }
 
-      toast.success("Signed in successfully!");
-      navigate("/admin");
+      setToken(data.accessToken);
+      toast.success('Signed in successfully!');
+      navigate('/admin');
     } catch (error: any) {
-      toast.error(error.message);
+      toast.error(error.message || 'Login failed');
     } finally {
       setLoading(false);
     }

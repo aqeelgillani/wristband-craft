@@ -9,7 +9,7 @@ datasource db {
 
 model Profile {
   id         String    @id @default(uuid())
-  email      String
+  email      String @unique
   fullName   String?   @map("full_name")
   createdAt  DateTime  @default(now()) @map("created_at")
 
@@ -37,10 +37,10 @@ model Order {
   currency               String
 
   printType              String?   @map("print_type")
-  hasSecureGuest         Boolean?  @map("has_secure_guest")
+  hasSecureGuests        Boolean?  @map("has_secure_guests")
 
-  shippingAddress        String?   @map("shipping_address")   // ✅ fixed
-  extraCharges           String?   @map("extra_charges")      // ✅ fixed
+  shippingAddress        Json?     @map("shipping_address")
+  extraCharges           Json?     @map("extra_charges")
   adminNotes             String?   @map("admin_notes")
 
   stripePaymentIntentId  String?   @map("stripe_payment_intent_id")
@@ -62,7 +62,7 @@ model Design {
   designUrl      String    @map("design_url")
   customText     String?   @map("custom_text")
   textColor      String?   @map("text_color")
-  textPosition   String?   @map("text_position")   // ✅ fixed
+  textPosition   Json?     @map("text_position")
 
   wristbandColor String?   @map("wristband_color")
   wristbandType  String?   @map("wristband_type")
@@ -110,6 +110,7 @@ model UserRole {
 model PricingConfig {
   id                         String  @id @default(uuid())
 
+  wristbandType              String  @map("wristband_type")
   minQuantity                Int     @map("min_quantity")
 
   basePriceUsd               Float   @map("base_price_usd")
