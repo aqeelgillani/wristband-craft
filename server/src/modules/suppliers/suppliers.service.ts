@@ -78,4 +78,37 @@ export class SuppliersService {
       },
     });
   }
+
+  async getPricing(userId: string) {
+    const supplier = await this.prisma.supplier.findUnique({ where: { userId } });
+    if (!supplier) throw new BadRequestException('Not a supplier');
+
+    return this.prisma.pricingConfig.findMany({
+      where: { supplierId: supplier.id },
+    });
+  }
+
+  async updatePricing(userId: string, dto: any) {
+    const supplier = await this.prisma.supplier.findUnique({ where: { userId } });
+    if (!supplier) throw new BadRequestException('Not a supplier');
+
+    // dto should be an array of pricing configs or a single object.
+    // If it's an array, we upsert them.
+    const configs = Array.isArray(dto) ? dto : [dto];
+    
+    for (const config of configs) {
+      if (config.id) {
+        await this.prisma.pricingConfig.update({
+          where: { id: config.id },
+          data: { ...config, supplierId: supplier.id },
+        });
+      } else {
+        await this.prisma.pricingConfig.create({
+          data: { ...config, supplierId: supplier.id },
+        });
+      }
+    }
+    
+    return this.prisma.pricingConfig.findMany({ where: { supplierId: supplier.id } });
+  }
 }

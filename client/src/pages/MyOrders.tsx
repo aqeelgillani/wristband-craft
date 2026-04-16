@@ -137,6 +137,46 @@ const MyOrders = () => {
                           <span className="font-semibold">{order.design.customText}</span>
                         </div>
                       )}
+                      
+                      <div className="flex gap-2 pt-4 justify-end border-t mt-4">
+                        {order.design?.designUrl && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => {
+                              const link = document.createElement("a");
+                              link.href = order.design!.designUrl;
+                              link.download = `order-design-${order.id.slice(0, 8)}.png`;
+                              link.target = "_blank";
+                              link.click();
+                            }}
+                          >
+                            Download Design
+                          </Button>
+                        )}
+                        <Button 
+                          variant="secondary" 
+                          size="sm"
+                          onClick={() => {
+                            // Send them to design studio to edit/start a new order with same config
+                            navigate("/design-studio", {
+                              state: {
+                                editDesign: {
+                                  orderDetails: {
+                                    wristband_color: order.design?.wristbandColor,
+                                    wristband_type: order.design?.wristbandType,
+                                    quantity: order.quantity,
+                                    print_type: order.printType || "none",
+                                    trademark_text: order.design?.customText || "",
+                                  }
+                                }
+                              }
+                            });
+                          }}
+                        >
+                          Edit / Reorder
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 </CardContent>

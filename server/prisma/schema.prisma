@@ -8,16 +8,18 @@ datasource db {
 }
 
 model Profile {
-  id         String    @id @default(uuid())
-  email      String @unique
-  password   String
-  fullName   String?   @map("full_name")
-  createdAt  DateTime  @default(now()) @map("created_at")
+  id                String     @id @default(uuid())
+  email             String     @unique
+  password          String
+  fullName          String?    @map("full_name")
+  isVerified        Boolean    @default(false) @map("is_verified")
+  verificationToken String?    @map("verification_token")
+  createdAt         DateTime   @default(now()) @map("created_at")
 
   orders     Order[]
   supplier   Supplier?
   roles      UserRole[]
-  designs    Design[]   // ✅ added missing relation
+  designs    Design[]
 
   @@map("profiles")
 }
@@ -68,6 +70,8 @@ model Design {
   wristbandColor String?   @map("wristband_color")
   wristbandType  String?   @map("wristband_type")
 
+  canvasJson     String?   @map("canvas_json")
+
   createdAt      DateTime  @default(now()) @map("created_at")
   updatedAt      DateTime  @updatedAt @map("updated_at")
 
@@ -89,8 +93,9 @@ model Supplier {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  user    Profile  @relation(fields: [userId], references: [id])
-  orders  Order[]
+  user          Profile  @relation(fields: [userId], references: [id])
+  orders        Order[]
+  pricingConfigs PricingConfig[]
 
   @@map("suppliers")
 }
@@ -111,6 +116,8 @@ model UserRole {
 model PricingConfig {
   id                         String  @id @default(uuid())
 
+  supplierId                 String? @map("supplier_id")
+
   wristbandType              String  @map("wristband_type")
   minQuantity                Int     @map("min_quantity")
 
@@ -128,6 +135,8 @@ model PricingConfig {
 
   secureGuestsExtraUsd       Float   @map("secure_guests_extra_usd")
   secureGuestsExtraEur       Float   @map("secure_guests_extra_eur")
+
+  supplier                   Supplier? @relation(fields: [supplierId], references: [id])
 
   @@map("pricing_config")
 }

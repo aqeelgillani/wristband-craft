@@ -158,9 +158,14 @@ const AdminDashboard = () => {
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
-          <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent flex-1">
             {isAdmin ? "Admin Dashboard" : "Supplier Dashboard"}
           </h1>
+          {isSupplier && (
+            <Button variant="outline" size="sm" onClick={() => navigate("/admin/pricing")}>
+              Manage Pricing
+            </Button>
+          )}
         </div>
       </header>
 
@@ -241,7 +246,7 @@ const AdminDashboard = () => {
                       <Select
                         value={order.status}
                         onValueChange={(value) => handleStatusUpdate(order.id, value)}
-                        disabled={!isAdmin}
+                        disabled={!isAdmin && !isSupplier}
                       >
                         <SelectTrigger className="w-[150px]">
                           <SelectValue />
@@ -251,6 +256,9 @@ const AdminDashboard = () => {
                           <SelectItem value="approved">Approve</SelectItem>
                           <SelectItem value="declined">Decline</SelectItem>
                           <SelectItem value="processing">Processing</SelectItem>
+                          <SelectItem value="ready">Ready</SelectItem>
+                          <SelectItem value="shipped">Shipped</SelectItem>
+                          <SelectItem value="delivered">Delivered</SelectItem>
                           <SelectItem value="completed">Completed</SelectItem>
                           <SelectItem value="cancelled">Cancelled</SelectItem>
                         </SelectContent>

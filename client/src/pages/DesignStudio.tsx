@@ -15,7 +15,7 @@ import { Canvas as FabricCanvas, Image as FabricImage, IText, Line, Rect } from 
 import QRPlaceholderImg from "@/assets/QR2.png";
 import QRCheckedImg from "@/assets/QR.jpg";
 
-type Currency = "EUR";
+type Currency = "EUR" | "USD" | "GBP";
 type WristbandType = "silicone" | "fabric" | "vinyl" | "tyvek";
 type PrintType = "none" | "black" | "full_color";
 
@@ -55,6 +55,39 @@ interface SavedTemplate {
   wristbandType: string;
   createdAt: string;
 }
+
+interface PricingConfig {
+  id?: string;
+  wristbandType: string;
+  minQuantity: number;
+  basePriceUsd: number;
+  basePriceEur: number;
+  basePriceGbp: number;
+  blackPrintExtraUsd: number;
+  blackPrintExtraEur: number;
+  blackPrintExtraGbp: number;
+  fullColorPrintExtraUsd: number;
+  fullColorPrintExtraEur: number;
+  fullColorPrintExtraGbp: number;
+  secureGuestsExtraUsd: number;
+  secureGuestsExtraEur: number;
+}
+
+const DEFAULT_CONFIG: PricingConfig = {
+  wristbandType: "tyvek",
+  minQuantity: 100,
+  basePriceUsd: 0.50,
+  basePriceEur: 0.45,
+  basePriceGbp: 0.40,
+  blackPrintExtraUsd: 0.05,
+  blackPrintExtraEur: 0.04,
+  blackPrintExtraGbp: 0.04,
+  fullColorPrintExtraUsd: 0.15,
+  fullColorPrintExtraEur: 0.14,
+  fullColorPrintExtraGbp: 0.12,
+  secureGuestsExtraUsd: 0.10,
+  secureGuestsExtraEur: 0.09,
+};
 
 const dataUrlToFile = async (dataUrl: string, filename: string): Promise<File> => {
   const response = await fetch(dataUrl);
@@ -107,6 +140,10 @@ const DesignStudio = () => {
   const [savedTemplates, setSavedTemplates] = useState<SavedTemplate[]>([]);
   const [trademarkTextObj, setTrademarkTextObj] = useState<IText | null>(null);
   const [qrPlaceholder, setQrPlaceholder] = useState<FabricImage | null>(null);
+
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
+  const [supplierConfigs, setSupplierConfigs] = useState<PricingConfig[]>([]);
 
   useEffect(() => {
     if (!canvasContainerRef.current || fabricCanvas) return;
@@ -163,11 +200,37 @@ const DesignStudio = () => {
     
     // Load saved templates
     loadTemplates();
+    loadSuppliers();
     
     return () => {
       canvas.dispose();
     };
   }, []);
+
+  const loadSuppliers = async () => {
+    try {
+      const data = await apiFetch("/suppliers");
+      setSuppliers(data || []);
+      if (data && data.length > 0) {
+        setSelectedSupplierId(data[0].id);
+      }
+    } catch (e) {
+      console.error("Failed to load suppliers:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedSupplierId) return;
+    const loadSupplierPricing = async () => {
+      try {
+        const data = await apiFetch(`/suppliers/${selectedSupplierId}/pricing`);
+        setSupplierConfigs(data || []);
+      } catch (e) {
+        // Fallback or error handled implicitly if array is empty
+      }
+    };
+    loadSupplierPricing();
+  }, [selectedSupplierId]);
 
   // Load design from edit mode (if navigated from order summary)
   useEffect(() => {
@@ -266,51 +329,82 @@ const DesignStudio = () => {
 
 
   useEffect(() => {
-  const fetchPricing = async () => {
-    if (quantity < 1000) return;
-    setLoadingPrice(true);
-    try {
-      // Base price is 39€ for 1000pcs regardless of print
-      const basePrice = 0.039; // €0.039 per unit (39€ / 1000)
-      const extraCharges: any = {};
+    const fetchPricing = async () => {
+      if (quantity < 1000) return;
+      if (!selectedSupplierId) return;
       
-      // Add optional extras
-      if (hasTrademark) {
-        extraCharges.trademark = 15; // €15 fixed per order
+      setLoadingPrice(true);
+      try {
+        // Find config for this writstbandType
+        const defaultConfig = DEFAULT_CONFIG; // Import or define DEFAULT_CONFIG above if not present
+        const config = supplierConfigs.find(c => c.wristbandType === wristbandType) || undefined;
+        
+        // Base price
+        let basePrice = 0.039;
+        if (config) {
+          if (currency === "USD") basePrice = config.basePriceUsd;
+          else if (currency === "GBP") basePrice = config.basePriceGbp;
+          else basePrice = config.basePriceEur;
+        }
+
+        const extraCharges: any = {};
+        
+        let printExtra = 0;
+        let qrExtra = 0;
+        let trademarkExtra = 0;
+
+        if (config) {
+            if (currency === "USD") {
+              printExtra = config.fullColorPrintExtraUsd;
+              qrExtra = config.secureGuestsExtraUsd;
+              trademarkExtra = config.blackPrintExtraUsd; // Using this arbitrarily for trademark text
+            } else if (currency === "GBP") {
+              printExtra = config.fullColorPrintExtraGbp;
+              qrExtra = config.secureGuestsExtraEur;
+              trademarkExtra = config.blackPrintExtraGbp;
+            } else {
+              printExtra = config.fullColorPrintExtraEur;
+              qrExtra = config.secureGuestsExtraEur;
+              trademarkExtra = config.blackPrintExtraEur;
+            }
+        } else {
+            // Default arbitrary values if config missing
+            printExtra = 0.039;
+            qrExtra = 0.015;
+            trademarkExtra = 0.015;
+        }
+
+        // Add optional extras (these are computed Per Unit based on config design)
+        if (hasTrademark) {
+          extraCharges.trademark = trademarkExtra * quantity;
+        }
+        if (hasPrint) {
+          extraCharges.print = printExtra * quantity;
+        }
+        if (hasQrCode) {
+          extraCharges.qrCode = qrExtra * quantity;
+        }
+
+        // Compute per-unit price (only base)
+        const unitPrice = basePrice;
+        const totalExtras = (extraCharges.trademark || 0) + (extraCharges.print || 0) + (extraCharges.qrCode || 0);
+        const totalPrice = (unitPrice * quantity) + totalExtras;
+
+        setPricing({
+          basePrice,
+          extraCharges,
+          unitPrice,
+          totalPrice,
+          minQuantity: config?.minQuantity || 1000,
+        });
+      } catch (error: any) {
+        toast.error(error.message || "Failed to calculate pricing");
+      } finally {
+        setLoadingPrice(false);
       }
-      if (hasPrint) {
-        extraCharges.print = 39; // €39 fixed per order (print charge)
-      }
-      if (hasQrCode) {
-        extraCharges.qrCode = 15; // €15 fixed per order
-      }
-
-      // Compute per-unit price (only includes base)
-      const unitPrice = basePrice;
-
-      // Total = base price * quantity + fixed extras
-      const totalExtras =
-        (extraCharges.trademark || 0) +
-        (extraCharges.print || 0) +
-        (extraCharges.qrCode || 0);
-
-      const totalPrice = unitPrice * quantity + totalExtras;
-
-      setPricing({
-        basePrice,
-        extraCharges,
-        unitPrice,
-        totalPrice,
-        minQuantity: 1000,
-      });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to calculate pricing");
-    } finally {
-      setLoadingPrice(false);
-    }
-  };
-  fetchPricing();
-}, [wristbandType, quantity, printType, hasTrademark, hasPrint, hasQrCode]);
+    };
+    fetchPricing();
+  }, [wristbandType, quantity, printType, hasTrademark, hasPrint, hasQrCode, selectedSupplierId, supplierConfigs, currency]);
 
 
   // Update trademark text on canvas (vertical and rotatable)
@@ -540,6 +634,7 @@ const DesignStudio = () => {
           trademark_text_color: trademarkTextColor,
           has_qr_code: hasQrCode,
           has_print: hasPrint,
+          supplierId: selectedSupplierId,
         },
         saved_at: new Date().toISOString(),
       };
@@ -678,6 +773,7 @@ const DesignStudio = () => {
           printType,
           extraCharges: pricing.extraCharges,
           status: "pending",
+          supplierId: selectedSupplierId,
           adminNotes: `Trademark: ${hasTrademark ? trademarkText : "No"}, QR Code: ${hasQrCode ? "Yes" : "No"}`,
         }),
       });
@@ -724,6 +820,7 @@ const DesignStudio = () => {
             has_trademark: hasTrademark,
             trademark_text: trademarkText,
             has_qr_code: hasQrCode,
+            supplierId: selectedSupplierId,
           },
         },
       });
@@ -1035,8 +1132,24 @@ const DesignStudio = () => {
             <h2 className="text-xl font-semibold mb-4">Configure Your Wristband</h2>
             <div className="space-y-6">
               <div>
-                <Label>Quantity (Min 1000 pcs)</Label>
-                <Input type="number" min="1000" step="100" value={quantity} onChange={(e) => setQuantity(Math.max(1000, parseInt(e.target.value) || 1000))} className="mt-2" />
+                <Label>Select Supplier</Label>
+                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                  <SelectTrigger className="mt-2 text-primary font-medium">
+                    <SelectValue placeholder="Choose a supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliers.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.companyName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1 text-primary/80">Select a supplier to see their specific pricing</p>
+              </div>
+              <div className="border-t pt-4">
+                <Label>Quantity (Min {pricing?.minQuantity || 1000} pcs)</Label>
+                <Input type="number" min={pricing?.minQuantity || 1000} step="100" value={quantity} onChange={(e) => setQuantity(Math.max(pricing?.minQuantity || 1000, parseInt(e.target.value) || (pricing?.minQuantity || 1000)))} className="mt-2" />
                 <Button
                   variant="default"
                   size="sm"
@@ -1265,6 +1378,7 @@ const DesignStudio = () => {
                           trademark_text_color: trademarkTextColor,
                           has_qr_code: hasQrCode,
                           has_print: hasPrint,
+                          supplierId: selectedSupplierId,
                         },
                         saved_at: new Date().toISOString(),
                       };

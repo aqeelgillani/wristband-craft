@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { apiFetch } from "@/lib/api";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
+  allowedRoles?: string[];
 }
 
-const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
+const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {
   const [authenticated, setAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [userRoles, setUserRoles] = useState<string[]>([]);
+  const location = useLocation();
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -18,7 +21,10 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     }
 
     apiFetch('/auth/me')
-      .then(() => setAuthenticated(true))
+      .then((data) => {
+        setAuthenticated(true);
+        setUserRoles(data.roles || []);
+      })
       .catch(() => setAuthenticated(false))
       .finally(() => setLoading(false));
   }, []);
@@ -35,7 +41,19 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   }
 
   if (!authenticated) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/auth" state={{ from: location }} replace />;
+  }
+
+  const isSupplierOrAdmin = userRoles.includes('supplier') || userRoles.includes('admin');
+
+  if (allowedRoles) {
+    const hasRole = allowedRoles.some((r) => userRoles.includes(r));
+    if (!hasRole) {
+      return <Navigate to={isSupplierOrAdmin ? "/admin" : "/dashboard"} replace />;
+    }
+  } else if (isSupplierOrAdmin && !location.pathname.startsWith("/admin")) {
+    // If no roles specified and supplier tries to access standard route (like /design-studio), block them
+    return <Navigate to="/admin" replace />;
   }
 
   return <>{children}</>;

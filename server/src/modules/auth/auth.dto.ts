@@ -27,3 +27,12 @@ export class ChangePasswordDto {
   @MinLength(6)
   newPassword: string;
 }
+
+export class VerifyEmailDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(6)
+  otp: string;
+}

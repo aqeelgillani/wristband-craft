@@ -18,6 +18,7 @@ import OrderSummary from "./pages/OrderSummary";
 import Address from "./pages/Address";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
+import SupplierPricing from "./pages/SupplierPricing";
 
 // Removed clearOldSessions() to fix persistent login issue
 
@@ -97,6 +98,14 @@ const App = () => (
             element={
               <ProtectedRoute>
                 <AdminPasswordReset />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/pricing"
+            element={
+              <ProtectedRoute allowedRoles={['supplier']}>
+                <SupplierPricing />
               </ProtectedRoute>
             }
           />

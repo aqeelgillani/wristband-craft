@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { RegisterDto, LoginDto, ChangePasswordDto } from './auth.dto';
+import { RegisterDto, LoginDto, ChangePasswordDto, VerifyEmailDto } from './auth.dto';
 import { AuthGuard } from '@nestjs/passport';
 
 @Controller('auth')
@@ -15,6 +15,11 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('verify-email')
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.authService.verifyEmail(dto);
   }
 
   @UseGuards(AuthGuard('jwt'))

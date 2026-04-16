@@ -16,6 +16,8 @@ const Auth = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
+  const [otp, setOtp] = useState("");
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -42,9 +44,14 @@ const Auth = () => {
           body: JSON.stringify({ email, password, fullName }),
         });
 
-        setToken(data.accessToken);
-        toast.success('Sign up successful!');
-        navigate('/dashboard');
+        if (data.needsVerification) {
+          setNeedsVerification(true);
+          toast.success('Verification code sent to your email');
+        } else {
+          setToken(data.accessToken);
+          toast.success('Sign up successful!');
+          navigate('/dashboard');
+        }
       } else {
         const data = await apiFetch('/auth/login', {
           method: 'POST',
@@ -65,6 +72,58 @@ const Auth = () => {
   const handleGoogleSignIn = () => {
     toast.error('OAuth is not supported yet. Please use email and password.');
   };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otp || otp.length < 6) return toast.error("Enter a valid 6-digit OTP");
+
+    setLoading(true);
+    try {
+      const data = await apiFetch('/auth/verify-email', {
+        method: 'POST',
+        body: JSON.stringify({ email, otp }),
+      });
+      setToken(data.accessToken);
+      toast.success('Verification successful!');
+      navigate('/dashboard');
+    } catch (error: any) {
+      toast.error(error.message || "Verification failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (needsVerification) {
+    return (
+      <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">
+        <Card className="w-full max-w-md shadow-xl animate-scale-in">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-3xl font-bold bg-gradient-primary bg-clip-text text-transparent">Verify Email</CardTitle>
+            <CardDescription>Enter the 6-digit code sent to {email}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleVerify} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="otp">Verification Code</Label>
+                <Input
+                  id="otp"
+                  type="text"
+                  placeholder="123456"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  maxLength={6}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={loading} variant="hero">
+                {loading ? "Verifying..." : "Verify Account"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-subtle flex items-center justify-center p-4">

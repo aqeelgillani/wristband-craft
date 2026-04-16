@@ -22,4 +22,16 @@ export class SuppliersController {
   list() {
     return this.suppliersService.findAll();
   }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Get('me/pricing')
+  getPricing(@Request() req: any) {
+    return this.suppliersService.getPricing(req.user.id);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('me/pricing')
+  updatePricing(@Request() req: any, @Body() dto: any) {
+    return this.suppliersService.updatePricing(req.user.id, dto);
+  }
 }
