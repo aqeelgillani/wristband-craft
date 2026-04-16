@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+import { getCurrentUser } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,35 +12,23 @@ import { ProductionDownload } from "@/components/ProductionDownload";
 
 interface Order {
   id: string;
+  supplierId?: string;
   quantity: number;
-  total_price: number;
-  unit_price: number;
-  base_price: number;
+  totalPrice: number;
+  unitPrice: number;
   status: string;
-  payment_status: string;
-  stripe_payment_intent_id: string | null;
-  created_at: string;
-  print_type?: string;
-  extra_charges?: any;
-  wristband_color?: string;
-  has_secure_guests?: boolean;
-  currency: string;
-  shipping_address?: any;
-  profiles: {
-    email: string;
-    full_name?: string;
+  paymentStatus: string;
+  createdAt: string;
+  printType?: string;
+  extraCharges?: Record<string, number>;
+  user: { email: string } | null;
+  design: {
+    designUrl: string;
+    wristbandType: string;
+    wristbandColor?: string;
+    customText: string | null;
   } | null;
-  designs: {
-    design_url: string;
-    wristband_type: string;
-    wristband_color?: string;
-    custom_text: string | null;
-    text_color?: string;
-    text_position?: any;
-  } | null;
-  suppliers: {
-    company_name: string;
-  } | null;
+  supplier: { companyName: string } | null;
 }
 
 const AdminDashboard = () => {
@@ -62,39 +51,20 @@ const AdminDashboard = () => {
 
   const checkAdminAccess = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const user = await getCurrentUser();
+      if (!user) {
         navigate("/auth");
         return;
       }
-
-      // Check if user has admin or supplier role
-      const { data: roles, error: roleError } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", session.user.id);
-
-      if (roleError || !roles || roles.length === 0) {
-        toast.error("Access denied - Admin or Supplier only");
-        navigate("/");
-        return;
-      }
-
-      const hasAdminRole = roles.some(r => r.role === "admin");
-      const hasSupplierRole = roles.some(r => r.role === "supplier");
+      const hasAdminRole = user.roles?.includes("admin");
+      const hasSupplierRole = user.roles?.includes("supplier");
 
       if (hasAdminRole) {
         setIsAdmin(true);
         fetchOrders();
       } else if (hasSupplierRole) {
         setIsSupplier(true);
-        // Get supplier ID
-        const { data: supplier } = await supabase
-          .from("suppliers")
-          .select("id")
-          .eq("user_id", session.user.id)
-          .single();
-        
+        const supplier = await apiFetch("/suppliers/me").catch(() => null);
         if (supplier) {
           setSupplierId(supplier.id);
           fetchOrders(supplier.id);
@@ -110,41 +80,19 @@ const AdminDashboard = () => {
 
   const fetchOrders = async (filterSupplierId?: string) => {
     try {
-      let query = supabase
-        .from("orders")
-        .select(`
-          *,
-          profiles (email),
-          designs (
-            design_url,
-            wristband_type,
-            custom_text
-          ),
-          suppliers (company_name)
-        `)
-        .order("created_at", { ascending: false });
-
-      // Filter by supplier if not admin
-      if (filterSupplierId) {
-        query = query.eq("supplier_id", filterSupplierId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) {
-        toast.error("Failed to load orders");
-        return;
-      }
-
-      setOrders(data || []);
+      const data = await apiFetch("/orders");
+      const visibleOrders = filterSupplierId
+        ? (data || []).filter((order: Order) => order.supplierId === filterSupplierId)
+        : (data || []);
+      setOrders(visibleOrders);
       
       // Calculate stats
-      const totalRevenue = data?.reduce((sum, order) => sum + Number(order.total_price), 0) || 0;
-      const pendingOrders = data?.filter(order => order.status === "pending").length || 0;
-      const paidOrders = data?.filter(order => order.payment_status === "paid").length || 0;
+      const totalRevenue = visibleOrders.reduce((sum: number, order: Order) => sum + Number(order.totalPrice), 0);
+      const pendingOrders = visibleOrders.filter((order: Order) => order.status === "pending").length;
+      const paidOrders = visibleOrders.filter((order: Order) => order.paymentStatus === "paid").length;
       
       setStats({
-        totalOrders: data?.length || 0,
+        totalOrders: visibleOrders.length,
         totalRevenue,
         pendingOrders,
         paidOrders,
@@ -158,26 +106,11 @@ const AdminDashboard = () => {
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
     try {
-      const { error } = await supabase.functions.invoke("update-order-status", {
-        body: { orderId, status: newStatus },
+      await apiFetch(`/orders/${orderId}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
       });
-
-      if (error) throw error;
-
-      // Send email notification if order is approved
-      if (newStatus === "approved") {
-        const { error: emailError } = await supabase.functions.invoke("send-order-confirmation", {
-          body: { orderId },
-        });
-        if (emailError) {
-          console.error("Failed to send confirmation email:", emailError);
-          toast.warning("Order approved but email notification failed");
-        } else {
-          toast.success("Order approved and confirmation email sent");
-        }
-      } else {
-        toast.success(`Order status updated to ${newStatus}`);
-      }
+      toast.success(`Order status updated to ${newStatus}`);
 
       fetchOrders(supplierId || undefined);
     } catch (error: any) {
@@ -293,17 +226,17 @@ const AdminDashboard = () => {
                         Order #{order.id.slice(0, 8)}
                       </CardTitle>
                       <p className="text-sm text-muted-foreground">
-                        {order.profiles?.email || "Guest"}
+                        {order.user?.email || "Guest"}
                       </p>
-                      {order.suppliers && (
+                      {order.supplier && (
                         <p className="text-xs text-muted-foreground">
-                          Supplier: {order.suppliers.company_name}
+                          Supplier: {order.supplier.companyName}
                         </p>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge className={getPaymentStatusColor(order.payment_status)}>
-                        {order.payment_status}
+                      <Badge className={getPaymentStatusColor(order.paymentStatus)}>
+                        {order.paymentStatus}
                       </Badge>
                       <Select
                         value={order.status}
@@ -327,10 +260,10 @@ const AdminDashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="grid md:grid-cols-3 gap-4">
-                    {order.designs && (
+                    {order.design && (
                       <div>
                         <img
-                          src={order.designs.design_url}
+                          src={order.design.designUrl}
                           alt="Order design"
                           className="w-full h-32 object-cover rounded-lg"
                         />
@@ -341,7 +274,7 @@ const AdminDashboard = () => {
                         <div>
                           <span className="text-xs text-muted-foreground">Type</span>
                           <div className="font-semibold capitalize">
-                            {order.designs?.wristband_type || "N/A"}
+                            {order.design?.wristbandType || "N/A"}
                           </div>
                         </div>
                         <div>
@@ -351,46 +284,46 @@ const AdminDashboard = () => {
                         <div>
                           <span className="text-xs text-muted-foreground">Color</span>
                           <div className="font-semibold flex items-center gap-2">
-                            {order.designs?.wristband_color && (
+                            {order.design?.wristbandColor && (
                               <span 
                                 className="w-4 h-4 rounded-full border"
-                                style={{ backgroundColor: order.designs.wristband_color }}
+                                style={{ backgroundColor: order.design.wristbandColor }}
                               />
                             )}
-                            {order.designs?.wristband_color || "N/A"}
+                            {order.design?.wristbandColor || "N/A"}
                           </div>
                         </div>
                         <div>
                           <span className="text-xs text-muted-foreground">Print Type</span>
                           <div className="font-semibold capitalize">
-                            {(order as any).print_type || "none"}
+                            {order.printType || "none"}
                           </div>
                         </div>
                         <div>
                           <span className="text-xs text-muted-foreground">Unit Price</span>
-                          <div className="font-semibold">${order.unit_price}</div>
+                          <div className="font-semibold">${order.unitPrice}</div>
                         </div>
                         <div>
                           <span className="text-xs text-muted-foreground">Total</span>
-                          <div className="font-semibold text-primary">${order.total_price}</div>
+                          <div className="font-semibold text-primary">${order.totalPrice}</div>
                         </div>
                         <div>
                           <span className="text-xs text-muted-foreground">Date</span>
                           <div className="font-semibold">
-                            {new Date(order.created_at).toLocaleDateString()}
+                            {new Date(order.createdAt).toLocaleDateString()}
                           </div>
                         </div>
-                        {order.designs?.custom_text && (
+                        {order.design?.customText && (
                           <div>
                             <span className="text-xs text-muted-foreground">Trademark</span>
-                            <div className="font-semibold">{order.designs.custom_text}</div>
+                            <div className="font-semibold">{order.design.customText}</div>
                           </div>
                         )}
-                        {(order as any).extra_charges && (
+                        {order.extraCharges && (
                           <div className="col-span-2">
                             <span className="text-xs text-muted-foreground">Extras</span>
                             <div className="font-semibold text-sm">
-                              {Object.entries((order as any).extra_charges as Record<string, number>).map(([key, value]) => (
+                              {Object.entries(order.extraCharges).map(([key, value]) => (
                                 <div key={key} className="flex justify-between">
                                   <span className="capitalize">{key}:</span>
                                   <span>${value}</span>

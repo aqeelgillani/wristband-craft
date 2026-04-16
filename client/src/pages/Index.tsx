@@ -1,11 +1,12 @@
 import { useNavigate } from "react-router-dom";
+import { apiFetch, clearToken } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import heroImage from "@/assets/hero-wristbands.jpg";
 import { Palette, Zap, ShieldCheck, ArrowRight, LogOut } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { getCurrentUser } from "@/lib/session";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -17,34 +18,21 @@ const Index = () => {
   }, []);
 
   const checkUser = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      setUser(session.user);
-      
-      // Check if user is a supplier
-      const { data: supplierData } = await supabase
-        .from("suppliers")
-        .select("company_name")
-        .eq("user_id", session.user.id)
-        .single();
-      
-      if (supplierData) {
-        setUserName(supplierData.company_name);
-      } else {
-        // Get profile full name
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", session.user.id)
-          .single();
-        
-        setUserName(profileData?.full_name || session.user.email?.split("@")[0] || "User");
-      }
+    const currentUser = await getCurrentUser();
+    if (!currentUser) return;
+
+    setUser(currentUser);
+    const supplier = await apiFetch("/suppliers/me").catch(() => null);
+    if (supplier?.companyName) {
+      setUserName(supplier.companyName);
+      return;
     }
+
+    setUserName(currentUser.fullName || currentUser.email?.split("@")[0] || "User");
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
+    clearToken();
     setUser(null);
     setUserName("");
     toast.success("Signed out successfully");

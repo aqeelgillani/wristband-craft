@@ -79,16 +79,34 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
-    return this.prisma.profile.findUnique({
+    const profile = await this.prisma.profile.findUnique({
       where: { id: userId },
       select: {
         id: true,
         email: true,
         fullName: true,
         createdAt: true,
-        roles: true,
+        roles: {
+          select: { role: true },
+        },
       },
     });
+
+    if (!profile) return null;
+
+    return {
+      ...profile,
+      roles: profile.roles.map((entry) => entry.role),
+    };
+  }
+
+  async changePassword(userId: string, newPassword: string) {
+    const hash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.profile.update({
+      where: { id: userId },
+      data: { password: hash },
+    });
+    return { success: true };
   }
 
   signToken(userId: string, email: string, roles: string[]) {

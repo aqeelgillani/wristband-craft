@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { clearToken } from "@/lib/api";
+import { getCurrentUser } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -12,20 +13,18 @@ const Dashboard = () => {
 
   useEffect(() => {
     const getUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        setUserEmail(session.user.email || "");
+      const user = await getCurrentUser();
+      if (user) {
+        setUserEmail(user.email || "");
+      } else {
+        navigate("/auth");
       }
     };
     getUser();
-  }, []);
+  }, [navigate]);
 
   const handleLogout = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast.error("Error signing out");
-      return;
-    }
+    clearToken();
     toast.success("Signed out successfully");
     navigate("/");
   };

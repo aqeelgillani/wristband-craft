@@ -15,6 +15,7 @@ export class ProfilesService {
     return this.prisma.profile.create({
       data: {
         email,
+        password: '',
         fullName,
       },
     });

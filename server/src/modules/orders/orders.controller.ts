@@ -1,8 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
 import { OrdersService } from './orders.service';
-import { CreateOrderDto, UpdateOrderStatusDto } from './orders.dto';
+import { BulkOrderUpdateDto, CreateOrderDto, UpdateOrderStatusDto } from './orders.dto';
 
 @Controller('orders')
+@UseGuards(AuthGuard('jwt'))
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
@@ -12,13 +14,18 @@ export class OrdersController {
   }
 
   @Get()
-  findAll() {
-    return this.ordersService.findAll();
+  findAll(@Request() req: any) {
+    return this.ordersService.findVisibleOrders(req.user);
   }
 
-  @Get('user/:userId')
-  findByUser(@Param('userId') userId: string) {
-    return this.ordersService.findByUser(userId);
+  @Get('mine')
+  findMine(@Request() req: any) {
+    return this.ordersService.findByUser(req.user.id);
+  }
+
+  @Patch('bulk')
+  updateBulk(@Body() dto: BulkOrderUpdateDto) {
+    return this.ordersService.updateBulk(dto);
   }
 
   @Patch(':id/status')

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,7 +15,7 @@ interface LocationState {
 
 interface Supplier {
   id: string;
-  company_name: string;
+  companyName: string;
 }
 
 const Address = () => {
@@ -41,12 +41,8 @@ const Address = () => {
   }, []);
 
   const fetchSuppliers = async () => {
-    const { data, error } = await supabase
-      .from("suppliers")
-      .select("id, company_name")
-      .order("company_name");
-    
-    if (!error && data) {
+    const data = await apiFetch("/suppliers").catch(() => []);
+    if (data) {
       setSuppliers(data);
       if (data.length > 0) {
         setSelectedSupplierId(data[0].id);
@@ -78,16 +74,6 @@ const Address = () => {
     setLoading(true);
     
     try {
-      // Get current session
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        toast.error("Please sign in to continue");
-        navigate("/auth");
-        setLoading(false);
-        return;
-      }
-
       console.log("Processing checkout for", state.designs.length, "designs");
 
       // Collect all order IDs (create orders if needed)
@@ -106,21 +92,14 @@ const Address = () => {
             
             // Create design record if needed
             if (!designId) {
-              const { data: designData, error: designError } = await supabase
-                .from("designs")
-                .insert({
-                  user_id: session.user.id,
-                  design_url: designUrl,
-                  wristband_color: d.orderDetails?.wristband_color || "#FFFFFF",
-                  wristband_type: d.orderDetails?.wristband_type || "tyvek",
-                })
-                .select()
-                .single();
-              
-              if (designError) {
-                console.error("Design creation error:", designError);
-                throw new Error("Failed to create design: " + designError.message);
-              }
+              const designData = await apiFetch("/designs", {
+                method: "POST",
+                body: JSON.stringify({
+                  designUrl,
+                  wristbandColor: d.orderDetails?.wristband_color || "#FFFFFF",
+                  wristbandType: d.orderDetails?.wristband_type || "tyvek",
+                }),
+              });
               
               designId = designData.id;
               console.log("Design created:", designId);
@@ -128,30 +107,23 @@ const Address = () => {
             
             // Create order record
             const orderDetails = d.orderDetails || {};
-            const { data: orderData, error: orderError } = await supabase
-              .from("orders")
-              .insert({
-                user_id: session.user.id,
-                design_id: designId,
-                supplier_id: selectedSupplierId,
+            const orderData = await apiFetch("/orders", {
+              method: "POST",
+              body: JSON.stringify({
+                designId,
+                supplierId: selectedSupplierId,
                 quantity: orderDetails.quantity || 1000,
-                total_price: orderDetails.total_price || 0,
-                unit_price: orderDetails.unit_price || 0,
-                base_price: orderDetails.base_price || 0,
+                totalPrice: orderDetails.total_price || 0,
+                unitPrice: orderDetails.unit_price || 0,
+                basePrice: orderDetails.base_price || 0,
                 currency: orderDetails.currency || "EUR",
-                print_type: orderDetails.print_type || "none",
-                extra_charges: orderDetails.extra_charges || {},
+                printType: orderDetails.print_type || "none",
+                extraCharges: orderDetails.extra_charges || {},
                 status: "pending",
-                payment_status: "pending",
-                has_secure_guests: orderDetails.has_qr_code || false,
-              })
-              .select()
-              .single();
-            
-            if (orderError) {
-              console.error("Order creation error:", orderError);
-              throw new Error("Failed to create order: " + orderError.message);
-            }
+                paymentStatus: "pending",
+                hasSecureGuests: orderDetails.has_qr_code || false,
+              }),
+            });
             
             orderId = orderData.id;
             console.log("Order created:", orderId);
@@ -176,93 +148,31 @@ const Address = () => {
       const expressValue = state.expressDelivery ? 19 : 0;
 
       // Fetch all orders to get current totals
-      const { data: ordersData, error: fetchOrdersErr } = await supabase
-        .from("orders")
-        .select("id, extra_charges, total_price")
-        .in("id", orderIds);
-      
-      if (fetchOrdersErr) {
-        console.error("Failed to fetch orders:", fetchOrdersErr);
-        throw new Error("Failed to fetch orders: " + fetchOrdersErr.message);
-      }
+      const ordersData = await apiFetch("/orders");
 
       // Update each order individually with merged extras
-      for (const order of ordersData || []) {
-        const existingExtras = (order.extra_charges && typeof order.extra_charges === 'object') 
-          ? order.extra_charges 
+      for (const order of (ordersData || []).filter((o: any) => orderIds.includes(o.id))) {
+        const existingExtras = (order.extraCharges && typeof order.extraCharges === 'object') 
+          ? order.extraCharges 
           : {};
         
         const newExtras = { ...existingExtras, express: expressValue };
-        const currentTotal = order.total_price ? Number(order.total_price) : 0;
+        const currentTotal = order.totalPrice ? Number(order.totalPrice) : 0;
         const newTotal = currentTotal + expressValue;
-
-        const { error: updateErr } = await supabase
-          .from("orders")
-          .update({
-            shipping_address: shippingAddress,
-            extra_charges: newExtras,
-            total_price: newTotal,
-          })
-          .eq("id", order.id);
-
-        if (updateErr) {
-          console.error("Failed to update order", order.id, updateErr);
-          throw new Error("Failed to update order: " + updateErr.message);
-        }
+        await apiFetch(`/orders/${order.id}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: order.status,
+            paymentStatus: order.paymentStatus,
+            shippingAddress,
+            extraCharges: newExtras,
+            totalPrice: newTotal,
+          }),
+        });
       }
 
-      console.log("All orders updated. Creating Stripe checkout session for orders:", orderIds);
-
-      // Create Stripe checkout session with ALL order IDs
-      console.log("Invoking create-checkout function with orderIds:", orderIds);
-      
-      const { data: checkoutData, error: checkoutError } = await supabase.functions.invoke(
-        "create-checkout",
-        {
-          body: { orderIds }, // Send array of all order IDs
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      console.log("Checkout function response:", { checkoutData, checkoutError });
-
-      // Check for function invocation error
-      if (checkoutError) {
-        console.error("Checkout function invocation error:", checkoutError);
-        const errorMsg = checkoutError.message || checkoutError.toString() || "Failed to invoke checkout function";
-        throw new Error(`Checkout Error: ${errorMsg}`);
-      }
-
-      // Check if response contains an error (function returned error in data)
-      if (checkoutData?.error) {
-        console.error("Checkout function returned error:", checkoutData.error);
-        const details = checkoutData.details ? ` - ${checkoutData.details}` : "";
-        throw new Error(`Checkout Failed: ${checkoutData.error}${details}`);
-      }
-
-      // Check for checkout URL
-      if (!checkoutData?.url) {
-        console.error("No checkout URL in response. Full response:", checkoutData);
-        throw new Error("No checkout URL returned from payment service");
-      }
-
-      console.log("✅ Checkout session created successfully:", checkoutData.sessionId);
-
-      // Update stripe session id on all orders
-      try {
-        await supabase
-          .from("orders")
-          .update({ stripe_session_id: checkoutData.sessionId })
-          .in("id", orderIds);
-      } catch (e) {
-        console.warn("Failed to update stripe session id", e);
-      }
-
-      // Redirect to Stripe checkout
-      toast.success("Redirecting to payment...");
-      window.location.href = checkoutData.url;
+      toast.success("Address saved. Redirecting to payment confirmation...");
+      navigate(`/payment-success?order_id=${orderIds[0]}`);
     } catch (error: any) {
       console.error("Checkout error:", error);
       toast.error(error.message || "An error occurred while processing your order");
@@ -457,7 +367,7 @@ const Address = () => {
                   <option value="">Choose a supplier...</option>
                   {suppliers.map((supplier) => (
                     <option key={supplier.id} value={supplier.id}>
-                      {supplier.company_name}
+                      {supplier.companyName}
                     </option>
                   ))}
                 </select>

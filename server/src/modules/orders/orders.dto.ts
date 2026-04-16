@@ -10,7 +10,7 @@ export class CreateOrderDto {
   paymentStatus?: string;
   currency: string;
   printType?: string;
-  hasSecureGuest?: boolean;
+  hasSecureGuests?: boolean;
   shippingAddress?: any;
   extraCharges?: any;
   adminNotes?: string;
@@ -19,4 +19,13 @@ export class CreateOrderDto {
 export class UpdateOrderStatusDto {
   status: string;
   paymentStatus?: string;
+  shippingAddress?: any;
+  extraCharges?: any;
+  totalPrice?: number;
+}
+
+export class BulkOrderUpdateDto {
+  orderIds: string[];
+  shippingAddress?: any;
+  extraCharges?: any;
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { toast } from "sonner";
@@ -8,11 +8,11 @@ import { ArrowLeft, Trash2, ShoppingCart } from "lucide-react";
 
 interface Design {
   id: string;
-  design_url: string;
-  wristband_color: string;
-  custom_text: string | null;
-  text_color: string;
-  created_at: string;
+  designUrl: string;
+  wristbandColor: string;
+  customText: string | null;
+  textColor: string;
+  createdAt: string;
 }
 
 const MyDesigns = () => {
@@ -26,23 +26,7 @@ const MyDesigns = () => {
 
   const fetchDesigns = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("designs")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        toast.error("Failed to load designs");
-        return;
-      }
-
+      const data = await apiFetch("/designs/mine");
       setDesigns(data || []);
     } catch (error) {
       toast.error("An error occurred");
@@ -52,36 +36,35 @@ const MyDesigns = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("designs").delete().eq("id", id);
-
-    if (error) {
+    try {
+      await apiFetch(`/designs/${id}`, { method: "DELETE" });
+      toast.success("Design deleted");
+      setDesigns(designs.filter((d) => d.id !== id));
+    } catch {
       toast.error("Failed to delete design");
-      return;
     }
-
-    toast.success("Design deleted");
-    setDesigns(designs.filter((d) => d.id !== id));
   };
 
   const handleOrder = async (design: Design) => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    const { error } = await supabase.from("orders").insert({
-      user_id: session.user.id,
-      design_id: design.id,
-      quantity: 1,
-      total_price: 19.99,
-      status: "pending",
-    });
-
-    if (error) {
+    try {
+      await apiFetch("/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          designId: design.id,
+          quantity: 1000,
+          totalPrice: 39,
+          unitPrice: 0.039,
+          status: "pending",
+          paymentStatus: "pending",
+          currency: "EUR",
+          wristbandType: "tyvek",
+        }),
+      });
+      toast.success("Order placed successfully!");
+      navigate("/my-orders");
+    } catch {
       toast.error("Failed to place order");
-      return;
     }
-
-    toast.success("Order placed successfully!");
-    navigate("/my-orders");
   };
 
   return (
@@ -117,7 +100,7 @@ const MyDesigns = () => {
               <Card key={design.id} className="overflow-hidden hover:shadow-xl transition-shadow">
                 <CardContent className="p-0">
                   <img
-                    src={design.design_url}
+                    src={design.designUrl}
                     alt="Wristband design"
                     className="w-full h-48 object-cover"
                   />
@@ -125,14 +108,14 @@ const MyDesigns = () => {
                     <div className="flex items-center gap-2 mb-2">
                       <div
                         className="w-6 h-6 rounded-full border-2"
-                        style={{ backgroundColor: design.wristband_color }}
+                        style={{ backgroundColor: design.wristbandColor }}
                       />
                       <span className="text-sm text-muted-foreground">
-                        {design.custom_text || "No text"}
+                        {design.customText || "No text"}
                       </span>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Created: {new Date(design.created_at).toLocaleDateString()}
+                      Created: {new Date(design.createdAt).toLocaleDateString()}
                     </p>
                   </div>
                 </CardContent>

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ArrowLeft, Key } from "lucide-react";
+import { getCurrentUser } from "@/lib/session";
 
 const AdminPasswordReset = () => {
   const navigate = useNavigate();
@@ -30,37 +31,26 @@ const AdminPasswordReset = () => {
     setLoading(true);
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
+      const user = await getCurrentUser();
+      if (!user) {
         toast.error("You must be logged in to reset your password");
         navigate("/auth");
         return;
       }
-
-      // Check if user is admin
-      const { data: roles } = await supabase
-        .from("user_roles")
-        .select("role")
-        .eq("user_id", session.user.id)
-        .eq("role", "admin")
-        .maybeSingle();
-
-      if (!roles) {
+      if (!user.roles?.includes("admin")) {
         toast.error("Admin access required");
         navigate("/");
         return;
       }
-
-      // Update password
-      const { error } = await supabase.auth.updateUser({
-        password: newPassword
+      await apiFetch("/auth/change-password", {
+        method: "PATCH",
+        body: JSON.stringify({
+          newPassword,
+        }),
       });
 
-      if (error) throw error;
-
       toast.success("Password updated successfully!");
-      navigate("/admin-dashboard");
+      navigate("/admin");
     } catch (error: any) {
       toast.error(error.message || "Failed to update password");
     } finally {

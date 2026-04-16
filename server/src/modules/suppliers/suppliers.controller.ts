@@ -17,4 +17,9 @@ export class SuppliersController {
   me(@Request() req: any) {
     return this.suppliersService.findByUserId(req.user.id);
   }
+
+  @Get()
+  list() {
+    return this.suppliersService.findAll();
+  }
 }

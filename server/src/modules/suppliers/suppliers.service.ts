@@ -67,4 +67,15 @@ export class SuppliersService {
       },
     });
   }
+
+  async findAll() {
+    return this.prisma.supplier.findMany({
+      orderBy: { companyName: 'asc' },
+      select: {
+        id: true,
+        companyName: true,
+        contactEmail: true,
+      },
+    });
+  }
 }

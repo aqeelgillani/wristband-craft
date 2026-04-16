@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle, Loader2 } from "lucide-react";
@@ -14,108 +14,24 @@ const PaymentSuccess = () => {
 
   useEffect(() => {
     const updatePaymentStatus = async () => {
-      const sessionId = searchParams.get("session_id");
+      const orderId = searchParams.get("order_id");
       
-      console.log("PaymentSuccess: session_id from URL:", sessionId);
+      console.log("PaymentSuccess: order_id from URL:", orderId);
       
-      if (!sessionId) {
-        console.error("PaymentSuccess: No session_id in URL");
-        setError("No payment session found");
+      if (!orderId) {
+        console.error("PaymentSuccess: No order_id in URL");
+        setError("No order found");
         setLoading(false);
         return;
       }
 
       try {
-        let orderId: string | null = null;
-        let paymentStatus = "pending";
-
-        if (sessionId.startsWith("cs_mock_")) {
-          console.log("PaymentSuccess: Mock session detected. Simulating successful payment.");
-          paymentStatus = "paid";
-
-          // 1. Find the order ID associated with this session ID.
-          const { data: orderData, error: orderError } = await supabase
-            .from("orders")
-            .select("id")
-            .eq("stripe_session_id", sessionId)
-            .single();
-
-          if (orderError || !orderData) {
-            console.error("PaymentSuccess: Failed to find order for mock session:", orderError);
-            throw new Error("Order not found for mock session.");
-          }
-          orderId = orderData.id;
-
-          // 2. Manually update order status to 'approved' and payment_status to 'paid'
-          const { error: updateError } = await supabase
-            .from("orders")
-            .update({ status: "approved", payment_status: "paid" })
-            .eq("id", orderId);
-
-          if (updateError) {
-            console.error("PaymentSuccess: Failed to manually update order status:", updateError);
-            throw new Error("Failed to update order status.");
-          }
-          
-        } else {
-          // Original logic for real Stripe session
-          console.log("PaymentSuccess: Calling update-payment-status with:", sessionId);
-          
-          // Call edge function to update payment status
-          const { data, error: updateError } = await supabase.functions.invoke(
-            "update-payment-status",
-            {
-              body: { sessionId },
-            }
-          );
-
-          console.log("PaymentSuccess: Response from update-payment-status:", data, updateError);
-
-          if (updateError) {
-            console.error("PaymentSuccess: Error from edge function:", updateError);
-            throw updateError;
-          }
-
-          paymentStatus = data?.paymentStatus;
-          orderId = data?.orderId;
-        }
-
-        if (paymentStatus === "paid" && orderId) {
+        await apiFetch(`/orders/${orderId}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "approved", paymentStatus: "paid" }),
+        });
+        if (orderId) {
           toast.success("Payment successful! Your order has been confirmed.");
-          
-          console.log("PaymentSuccess: Sending confirmation emails for order:", orderId);
-          
-          // Send confirmation email to user
-          const { error: userEmailError } = await supabase.functions.invoke(
-            "send-order-confirmation",
-            {
-              body: { orderId },
-            }
-          );
-
-          if (userEmailError) {
-            console.error("PaymentSuccess: Error sending user confirmation email:", userEmailError);
-          } else {
-            console.log("PaymentSuccess: User confirmation email sent successfully");
-          }
-
-          // Send notification email to supplier
-          const { error: supplierEmailError } = await supabase.functions.invoke(
-            "send-supplier-notification",
-            {
-              body: { orderId },
-            }
-          );
-
-          if (supplierEmailError) {
-            console.error("PaymentSuccess: Error sending supplier notification email:", supplierEmailError);
-          } else {
-            console.log("PaymentSuccess: Supplier notification email sent successfully");
-          }
-        } else if (paymentStatus !== "paid") {
-          setError("Payment was not successful. Status: " + paymentStatus);
-        } else {
-          setError("Payment successful, but failed to retrieve order details.");
         }
         
         setLoading(false);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,15 +10,15 @@ import { ArrowLeft, Package } from "lucide-react";
 interface Order {
   id: string;
   quantity: number;
-  total_price: number;
-  unit_price: number;
+  totalPrice: number;
+  unitPrice: number;
   status: string;
-  created_at: string;
-  designs: {
-    design_url: string;
-    custom_text: string | null;
-    wristband_color: string;
-    wristband_type: string;
+  createdAt: string;
+  design: {
+    designUrl: string;
+    customText: string | null;
+    wristbandColor: string;
+    wristbandType: string;
   } | null;
 }
 
@@ -33,31 +33,7 @@ const MyOrders = () => {
 
   const fetchOrders = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/auth");
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("orders")
-        .select(`
-          *,
-          designs (
-            design_url,
-            custom_text,
-            wristband_color,
-            wristband_type
-          )
-        `)
-        .eq("user_id", session.user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        toast.error("Failed to load orders");
-        return;
-      }
-
+      const data = await apiFetch("/orders/mine");
       setOrders(data || []);
     } catch (error) {
       toast.error("An error occurred");
@@ -123,10 +99,10 @@ const MyOrders = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="grid md:grid-cols-2 gap-4">
-                    {order.designs && (
+                    {order.design && (
                       <div>
                         <img
-                          src={order.designs.design_url}
+                          src={order.design.designUrl}
                           alt="Order design"
                           className="w-full h-32 object-cover rounded-lg"
                         />
@@ -135,7 +111,7 @@ const MyOrders = () => {
                     <div className="space-y-2">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Type:</span>
-                        <span className="font-semibold capitalize">{order.designs?.wristband_type || "N/A"}</span>
+                        <span className="font-semibold capitalize">{order.design?.wristbandType || "N/A"}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Quantity:</span>
@@ -143,22 +119,22 @@ const MyOrders = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Unit Price:</span>
-                        <span className="font-semibold">${order.unit_price}</span>
+                        <span className="font-semibold">${order.unitPrice}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Total:</span>
-                        <span className="font-semibold text-primary">${order.total_price}</span>
+                        <span className="font-semibold text-primary">${order.totalPrice}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Date:</span>
                         <span className="font-semibold">
-                          {new Date(order.created_at).toLocaleDateString()}
+                          {new Date(order.createdAt).toLocaleDateString()}
                         </span>
                       </div>
-                      {order.designs?.custom_text && (
+                      {order.design?.customText && (
                         <div className="flex justify-between">
                           <span className="text-muted-foreground">Text:</span>
-                          <span className="font-semibold">{order.designs.custom_text}</span>
+                          <span className="font-semibold">{order.design.customText}</span>
                         </div>
                       )}
                     </div>
