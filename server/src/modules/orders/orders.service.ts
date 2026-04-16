@@ -6,10 +6,11 @@ import { BulkOrderUpdateDto, CreateOrderDto, UpdateOrderStatusDto } from './orde
 export class OrdersService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(createOrderDto: CreateOrderDto) {
+  async create(userId: string, createOrderDto: CreateOrderDto) {
     return this.prisma.order.create({
       data: {
         ...createOrderDto,
+        userId,
         shippingAddress: createOrderDto.shippingAddress ? JSON.stringify(createOrderDto.shippingAddress) : undefined,
         extraCharges: createOrderDto.extraCharges ? JSON.stringify(createOrderDto.extraCharges) : undefined,
         createdAt: new Date(),
