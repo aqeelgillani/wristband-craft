@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Truck, Clock, Calendar, ShieldCheck, Download as DownloadIcon, Trash2, Edit } from "lucide-react";
 import { toast } from "sonner";
-import { ArrowLeft, Loader2, ShoppingCart } from "lucide-react";
+import { ArrowLeft, ShoppingCart } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +23,6 @@ const OrderSummary = () => {
   const location = useLocation();
   const state = location.state as LocationState;
 
-  const [loading, setLoading] = useState(false);
   const [designsInCart, setDesignsInCart] = useState<any[] | null>(null);
   const [expressDelivery, setExpressDelivery] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);

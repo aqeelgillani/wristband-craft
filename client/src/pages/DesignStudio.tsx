@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+import { getCurrentUser } from "@/lib/session";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,11 +50,35 @@ interface PricingData {
 
 interface SavedTemplate {
   id: string;
-  design_url: string;
-  wristband_color: string;
-  wristband_type: string;
-  created_at: string;
+  designUrl: string;
+  wristbandColor: string;
+  wristbandType: string;
+  createdAt: string;
 }
+
+const dataUrlToFile = async (dataUrl: string, filename: string): Promise<File> => {
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  return new File([blob], filename, { type: blob.type || "image/png" });
+};
+
+const uploadDesignImage = async (dataUrl: string): Promise<string> => {
+  const file = await dataUrlToFile(dataUrl, `design-${Date.now()}.png`);
+  const formData = new FormData();
+  formData.append("file", file);
+  const token = localStorage.getItem("token");
+  const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:3000";
+  const response = await fetch(`${apiUrl}/designs/upload`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error("Failed to upload design image");
+  }
+  const data = await response.json();
+  return data.url;
+};
 
 const DesignStudio = () => {
   const navigate = useNavigate();
@@ -230,16 +255,9 @@ const DesignStudio = () => {
 
   const loadTemplates = async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-      
-      const { data, error } = await supabase
-        .from("designs")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .order("created_at", { ascending: false });
-      
-      if (error) throw error;
+      const user = await getCurrentUser();
+      if (!user) return;
+      const data = await apiFetch("/designs/mine");
       setSavedTemplates(data || []);
     } catch (error: any) {
       console.error("Failed to load templates:", error);
@@ -497,23 +515,16 @@ const DesignStudio = () => {
     
     setSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) {
+      const user = await getCurrentUser();
+      if (!user) {
         toast.error("Please sign in to save templates");
         navigate("/auth");
         return;
       }
 
       const dataUrl = fabricCanvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
-      const blob = await (await fetch(dataUrl)).blob();
-      const fileName = `templates/${session.user.id}/${Date.now()}.png`;
-      const { error: uploadError } = await supabase.storage.from("wristband-designs").upload(fileName, blob);
-      if (uploadError) throw uploadError;
+      const publicUrl = await uploadDesignImage(dataUrl);
 
-      const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
-
-      // Also upload a JSON snapshot with full canvas + order details so templates fully restore across tabs/devices
-      const jsonName = fileName.replace('.png', '.json');
       const jsonPayload = {
         canvas: fabricCanvas.toJSON(),
         orderDetails: {
@@ -532,26 +543,16 @@ const DesignStudio = () => {
         },
         saved_at: new Date().toISOString(),
       };
-      const jsonBlob = new Blob([JSON.stringify(jsonPayload)], { type: 'application/json' });
-      const { error: jsonUploadError } = await supabase.storage
-        .from("wristband-designs")
-        .upload(jsonName, jsonBlob, { contentType: 'application/json', upsert: true });
-      if (jsonUploadError) console.warn('Template JSON upload warning:', jsonUploadError.message);
-      
-      const { data, error: designError } = await supabase.from("designs").insert({
-        user_id: session.user.id,
-        design_url: publicUrl,
-        wristband_color: wristbandColor,
-        wristband_type: wristbandType,
-        custom_text: trademarkText || "",
-        text_color: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }).select();
-      if (designError) {
-        console.error("Design insert error:", designError);
-        throw designError;
-      }
+      await apiFetch("/designs", {
+        method: "POST",
+        body: JSON.stringify({
+          designUrl: publicUrl,
+          wristbandColor,
+          wristbandType,
+          customText: trademarkText || "",
+          textColor: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
+        }),
+      });
 
       toast.success("Template saved successfully");
       // Save to localStorage cart (designs created in this browser)
@@ -604,8 +605,7 @@ const DesignStudio = () => {
 
   const handleDeleteTemplate = async (id: string) => {
     try {
-      const { error } = await supabase.from("designs").delete().eq("id", id);
-      if (error) throw error;
+      await apiFetch(`/designs/${id}`, { method: "DELETE" });
       toast.success("Template deleted");
       loadTemplates();
     } catch (error: any) {
@@ -648,42 +648,39 @@ const DesignStudio = () => {
 
     setSaving(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
+      const user = await getCurrentUser();
+      if (!user) {
         toast.error("Please sign in to place order");
         navigate("/auth");
         return;
       }
 
       const dataUrl = fabricCanvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
-      const blob = await (await fetch(dataUrl)).blob();
-      const fileName = `${session.user.id}/${Date.now()}.png`;
-      const { error: uploadError } = await supabase.storage.from("wristband-designs").upload(fileName, blob);
-      if (uploadError) throw uploadError;
+      const publicUrl = await uploadDesignImage(dataUrl);
+      const design = await apiFetch("/designs", {
+        method: "POST",
+        body: JSON.stringify({
+          designUrl: publicUrl,
+          wristbandColor,
+          wristbandType,
+        }),
+      });
 
-      const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
-      const { data: design, error: designError } = await supabase.from("designs").insert({
-        user_id: session.user.id,
-        design_url: publicUrl,
-        wristband_color: wristbandColor,
-        wristband_type: wristbandType,
-      }).select().single();
-      if (designError) throw designError;
-
-      const { data: order, error: orderError } = await supabase.from("orders").insert({
-        user_id: session.user.id,
-        design_id: design.id,
-        quantity,
-        total_price: pricing.totalPrice,
-        unit_price: pricing.unitPrice,
-        base_price: pricing.basePrice,
-        currency,
-        print_type: printType,
-        extra_charges: pricing.extraCharges,
-        status: "pending",
-        admin_notes: `Trademark: ${hasTrademark ? trademarkText : "No"}, QR Code: ${hasQrCode ? "Yes" : "No"}`,
-      }).select().single();
-      if (orderError) throw orderError;
+      const order = await apiFetch("/orders", {
+        method: "POST",
+        body: JSON.stringify({
+          designId: design.id,
+          quantity,
+          totalPrice: pricing.totalPrice,
+          unitPrice: pricing.unitPrice,
+          basePrice: pricing.basePrice,
+          currency,
+          printType,
+          extraCharges: pricing.extraCharges,
+          status: "pending",
+          adminNotes: `Trademark: ${hasTrademark ? trademarkText : "No"}, QR Code: ${hasQrCode ? "Yes" : "No"}`,
+        }),
+      });
 
       // Add this placed order to localStorage cart_designs so it appears in "Your Order" list
       try {
@@ -872,14 +869,14 @@ const DesignStudio = () => {
                           
                            if (cartRaw) {
                             const cart = JSON.parse(cartRaw);
-                            const match = cart.find((c: any) => c.designUrl === template.design_url);
+                            const match = cart.find((c: any) => c.designUrl === template.designUrl);
                             
                             if (match && match.canvasJson && match.orderDetails) {
                               const od = match.orderDetails;
                               
                               // Restore ALL settings
-                              setWristbandColor(od.wristband_color || template.wristband_color);
-                              setWristbandType((od.wristband_type || template.wristband_type) as WristbandType);
+                              setWristbandColor(od.wristband_color || template.wristbandColor);
+                              setWristbandType((od.wristband_type || template.wristbandType) as WristbandType);
                               setQuantity(od.quantity || 1000);
                               setPrintType(od.print_type || "none");
                               setHasPrint(od.has_print !== undefined ? od.has_print : (od.print_type !== "none"));
@@ -891,14 +888,14 @@ const DesignStudio = () => {
                               if (od.trademark_text_color) {
                                 setTrademarkTextColor(od.trademark_text_color === "white" ? "white" : "black");
                               } else if (od.trademark_text) {
-                                const textColor = (template as any).text_color || od.text_color;
+                                const textColor = (template as any).textColor || od.text_color;
                                 setTrademarkTextColor(textColor?.toLowerCase() === "#ffffff" ? "white" : "black");
                               } else {
                                 setTrademarkTextColor("black");
                               }
                               
                               // Update background color
-                              fabricCanvas.backgroundColor = od.wristband_color || template.wristband_color;
+                              fabricCanvas.backgroundColor = od.wristband_color || template.wristbandColor;
                               
                               // Load canvas JSON with all objects (logos, text, etc.)
                               await new Promise<void>((resolve) => {
@@ -942,15 +939,15 @@ const DesignStudio = () => {
                           // Fallback: try to restore from JSON snapshot stored next to the image
                           if (!restored) {
                             try {
-                              const jsonUrl = template.design_url.replace(/\.png(\?.*)?$/, '.json');
+                              const jsonUrl = template.designUrl.replace(/\.png(\?.*)?$/, '.json');
                               const resp = await fetch(jsonUrl);
                               if (resp.ok) {
                                 const payload = await resp.json();
                                 const od = payload.orderDetails || {};
 
                                 // Restore settings
-                                setWristbandColor(od.wristband_color || template.wristband_color);
-                                setWristbandType((od.wristband_type || template.wristband_type) as WristbandType);
+                                setWristbandColor(od.wristband_color || template.wristbandColor);
+                                setWristbandType((od.wristband_type || template.wristbandType) as WristbandType);
                                 setQuantity(od.quantity || 1000);
                                 setPrintType(od.print_type || 'none');
                                 setHasPrint(od.has_print ?? (od.print_type !== 'none'));
@@ -959,7 +956,7 @@ const DesignStudio = () => {
                                 setTrademarkTextColor((od.trademark_text_color === 'white' || od.trademark_text_color === 'black') ? od.trademark_text_color : 'black');
                                 setHasQrCode(od.has_qr_code || false);
 
-                                fabricCanvas.backgroundColor = od.wristband_color || template.wristband_color;
+                                fabricCanvas.backgroundColor = od.wristband_color || template.wristbandColor;
 
                                 await new Promise<void>((resolve) => {
                                   fabricCanvas.loadFromJSON(payload.canvas || payload, () => {
@@ -986,9 +983,9 @@ const DesignStudio = () => {
 
                             if (!restored) {
                               // Final fallback: basic settings only
-                              setWristbandColor(template.wristband_color);
-                              setWristbandType(template.wristband_type as WristbandType);
-                              fabricCanvas.backgroundColor = template.wristband_color;
+                              setWristbandColor(template.wristbandColor);
+                              setWristbandType(template.wristbandType as WristbandType);
+                              fabricCanvas.backgroundColor = template.wristbandColor;
 
                               const customTextFromTemplate = (template as any).custom_text;
                               const textColorFromTemplate = (template as any).text_color;
@@ -1013,7 +1010,7 @@ const DesignStudio = () => {
                         }
                       }}
                     >
-                      <img src={template.design_url} alt="Template" className="w-full h-20 object-cover" />
+                      <img src={template.designUrl} alt="Template" className="w-full h-20 object-cover" />
                       <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                         <Button
                           variant="ghost"
@@ -1243,24 +1240,16 @@ const DesignStudio = () => {
                     
                     setSaving(true);
                     try {
-                      const { data: { session } } = await supabase.auth.getSession();
-                      if (!session?.user) {
+                      const user = await getCurrentUser();
+                      if (!user) {
                         toast.error("Please sign in to add to cart");
                         navigate("/auth");
                         return;
                       }
 
-                      // Save design image
                       const dataUrl = fabricCanvas.toDataURL({ format: "png", quality: 1, multiplier: 2 });
-                      const blob = await (await fetch(dataUrl)).blob();
-                      const fileName = `templates/${session.user.id}/${Date.now()}.png`;
-                      const { error: uploadError } = await supabase.storage.from("wristband-designs").upload(fileName, blob);
-                      if (uploadError) throw uploadError;
-
-                      const { data: { publicUrl } } = supabase.storage.from("wristband-designs").getPublicUrl(fileName);
+                      const publicUrl = await uploadDesignImage(dataUrl);
                       
-                      // Also upload JSON snapshot for full restore
-                      const jsonName = fileName.replace('.png', '.json');
                       const jsonPayload = {
                         canvas: fabricCanvas.toJSON(),
                         orderDetails: {
@@ -1279,20 +1268,17 @@ const DesignStudio = () => {
                         },
                         saved_at: new Date().toISOString(),
                       };
-                      const jsonBlob = new Blob([JSON.stringify(jsonPayload)], { type: 'application/json' });
-                      const { error: jsonUploadError } = await supabase.storage
-                        .from("wristband-designs")
-                        .upload(jsonName, jsonBlob, { contentType: 'application/json', upsert: true });
-                      if (jsonUploadError) console.warn('Template JSON upload warning:', jsonUploadError.message);
                       
                       // Save to database
-                      await supabase.from("designs").insert({
-                        user_id: session.user.id,
-                        design_url: publicUrl,
-                        wristband_color: wristbandColor,
-                        wristband_type: wristbandType,
-                        custom_text: trademarkText || "",
-                        text_color: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
+                      await apiFetch("/designs", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          designUrl: publicUrl,
+                          wristbandColor,
+                          wristbandType,
+                          customText: trademarkText || "",
+                          textColor: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
+                        }),
                       });
 
                       // Add to localStorage cart
