@@ -21,6 +21,9 @@ interface Order {
   createdAt: string;
   printType?: string;
   extraCharges?: Record<string, number>;
+  customizationNotes?: string | null;
+  canManage?: boolean;
+  visibility?: "fulfillment" | "platform" | "full";
   user: { email: string } | null;
   design: {
     designUrl: string;
@@ -37,7 +40,6 @@ const AdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSupplier, setIsSupplier] = useState(false);
-  const [supplierId, setSupplierId] = useState<string | null>(null);
   const [stats, setStats] = useState({
     totalOrders: 0,
     totalRevenue: 0,
@@ -61,14 +63,10 @@ const AdminDashboard = () => {
 
       if (hasAdminRole) {
         setIsAdmin(true);
-        fetchOrders();
+        await fetchOrders("all");
       } else if (hasSupplierRole) {
         setIsSupplier(true);
-        const supplier = await apiFetch("/suppliers/me").catch(() => null);
-        if (supplier) {
-          setSupplierId(supplier.id);
-          fetchOrders(supplier.id);
-        }
+        await fetchOrders("own");
       } else {
         toast.error("Access denied - Admin or Supplier only");
         navigate("/");
@@ -78,21 +76,19 @@ const AdminDashboard = () => {
     }
   };
 
-  const fetchOrders = async (filterSupplierId?: string) => {
+  /** 'all' = admin; 'own' = supplier revenue scope (orders you fulfill) */
+  const fetchOrders = async (statsScope: "all" | "own" = "all") => {
     try {
       const data = await apiFetch("/orders");
-      const visibleOrders = filterSupplierId
-        ? (data || []).filter((order: Order) => order.supplierId === filterSupplierId)
-        : (data || []);
+      const visibleOrders = (data || []) as Order[];
       setOrders(visibleOrders);
-      
-      // Calculate stats
-      const totalRevenue = visibleOrders.reduce((sum: number, order: Order) => sum + Number(order.totalPrice), 0);
-      const pendingOrders = visibleOrders.filter((order: Order) => order.status === "pending").length;
-      const paidOrders = visibleOrders.filter((order: Order) => order.paymentStatus === "paid").length;
-      
+      const forStats =
+        statsScope === "own" ? visibleOrders.filter((o) => o.canManage) : visibleOrders;
+      const totalRevenue = forStats.reduce((sum, order) => sum + Number(order.totalPrice), 0);
+      const pendingOrders = forStats.filter((order) => order.status === "pending").length;
+      const paidOrders = forStats.filter((order) => order.paymentStatus === "paid").length;
       setStats({
-        totalOrders: visibleOrders.length,
+        totalOrders: forStats.length,
         totalRevenue,
         pendingOrders,
         paidOrders,
@@ -112,7 +108,7 @@ const AdminDashboard = () => {
       });
       toast.success(`Order status updated to ${newStatus}`);
 
-      fetchOrders(supplierId || undefined);
+      await fetchOrders(isAdmin ? "all" : "own");
     } catch (error: any) {
       toast.error(error.message || "Failed to update order status");
     }
@@ -154,16 +150,21 @@ const AdminDashboard = () => {
     <div className="min-h-screen bg-gradient-subtle">
       <header className="border-b bg-card/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center gap-4">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
+          <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back
           </Button>
           <h1 className="text-2xl font-bold bg-gradient-primary bg-clip-text text-transparent flex-1">
             {isAdmin ? "Admin Dashboard" : "Supplier Dashboard"}
           </h1>
+          {(isAdmin || isSupplier) && (
+            <Button variant="outline" size="sm" onClick={() => navigate("/admin/designs")}>
+              All designs
+            </Button>
+          )}
           {isSupplier && (
             <Button variant="outline" size="sm" onClick={() => navigate("/admin/pricing")}>
-              Manage Pricing
+              Manage pricing
             </Button>
           )}
         </div>
@@ -221,15 +222,35 @@ const AdminDashboard = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <h2 className="text-2xl font-bold mb-4">All Orders</h2>
+            <h2 className="text-2xl font-bold mb-1">
+              {isSupplier ? "All platform orders" : "All orders"}
+            </h2>
+            {isSupplier && (
+              <p className="text-sm text-muted-foreground mb-4 max-w-3xl">
+                You can browse every order for context. You only fulfill orders for your company; only those allow status
+                changes. Customer and shipping details are hidden on other suppliers&apos; orders. Prices are set under
+                Manage pricing.
+              </p>
+            )}
             {orders.map((order) => (
-              <Card key={order.id} className="hover:shadow-xl transition-shadow">
+              <Card
+                key={order.id}
+                className={
+                  order.visibility === "platform" ? "hover:shadow-xl transition-shadow border-dashed" : "hover:shadow-xl transition-shadow"
+                }
+              >
                 <CardHeader>
                   <div className="flex justify-between items-start flex-wrap gap-2">
                     <div>
-                      <CardTitle className="text-lg">
-                        Order #{order.id.slice(0, 8)}
-                      </CardTitle>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CardTitle className="text-lg">Order #{order.id.slice(0, 8)}</CardTitle>
+                        {isSupplier && order.visibility === "platform" && (
+                          <Badge variant="secondary">Reference — other supplier</Badge>
+                        )}
+                        {isSupplier && order.canManage && (
+                          <Badge className="bg-primary/20 text-primary-foreground">Your order</Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         {order.user?.email || "Guest"}
                       </p>
@@ -246,7 +267,7 @@ const AdminDashboard = () => {
                       <Select
                         value={order.status}
                         onValueChange={(value) => handleStatusUpdate(order.id, value)}
-                        disabled={!isAdmin && !isSupplier}
+                        disabled={!(isAdmin || order.canManage === true)}
                       >
                         <SelectTrigger className="w-[150px]">
                           <SelectValue />
@@ -327,6 +348,12 @@ const AdminDashboard = () => {
                             <div className="font-semibold">{order.design.customText}</div>
                           </div>
                         )}
+                        {order.customizationNotes && (
+                          <div className="col-span-2">
+                            <span className="text-xs text-muted-foreground">Customer notes</span>
+                            <div className="font-semibold text-sm whitespace-pre-wrap">{order.customizationNotes}</div>
+                          </div>
+                        )}
                         {order.extraCharges && (
                           <div className="col-span-2">
                             <span className="text-xs text-muted-foreground">Extras</span>
@@ -342,11 +369,16 @@ const AdminDashboard = () => {
                         )}
                       </div>
 
-                      {/* Production Download Section */}
-                      <div className="mt-4 pt-4 border-t">
-                        <h4 className="font-semibold text-sm mb-3">Production Files</h4>
-                        <ProductionDownload order={order} />
-                      </div>
+                      {isAdmin || order.canManage ? (
+                        <div className="mt-4 pt-4 border-t">
+                          <h4 className="font-semibold text-sm mb-3">Production files</h4>
+                          <ProductionDownload order={order} />
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground mt-4 pt-4 border-t">
+                          Production downloads are available for orders your company fulfills.
+                        </p>
+                      )}
                     </div>
                   </div>
                 </CardContent>

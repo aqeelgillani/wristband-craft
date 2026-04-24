@@ -13,12 +13,15 @@ interface Order {
   totalPrice: number;
   unitPrice: number;
   status: string;
+  printType?: string;
   createdAt: string;
   design: {
+    id: string;
     designUrl: string;
     customText: string | null;
-    wristbandColor: string;
+    wristbandColor: string | null;
     wristbandType: string;
+    canvasJson?: string | null;
   } | null;
 }
 
@@ -70,6 +73,10 @@ const MyOrders = () => {
       </header>
 
       <main className="container mx-auto px-4 py-8">
+        <p className="text-sm text-muted-foreground max-w-4xl mx-auto mb-6">
+          You can customize and reorder from your designs. Unit price and list totals come from the supplier you choose in
+          the design studio, not from this screen.
+        </p>
         {loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
@@ -158,23 +165,23 @@ const MyOrders = () => {
                           variant="secondary" 
                           size="sm"
                           onClick={() => {
-                            // Send them to design studio to edit/start a new order with same config
                             navigate("/design-studio", {
                               state: {
                                 editDesign: {
+                                  canvasJson: order.design?.canvasJson || undefined,
                                   orderDetails: {
-                                    wristband_color: order.design?.wristbandColor,
+                                    wristband_color: order.design?.wristbandColor || undefined,
                                     wristband_type: order.design?.wristbandType,
                                     quantity: order.quantity,
                                     print_type: order.printType || "none",
                                     trademark_text: order.design?.customText || "",
-                                  }
-                                }
-                              }
+                                  },
+                                },
+                              },
                             });
                           }}
                         >
-                          Edit / Reorder
+                          Customize again
                         </Button>
                       </div>
                     </div>

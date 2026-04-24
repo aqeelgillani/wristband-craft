@@ -47,6 +47,11 @@ export class DesignsController {
     return this.designsService.findMine(req.user.id);
   }
 
+  @Get('platform')
+  platform(@Request() req: any) {
+    return this.designsService.findPlatformView({ id: req.user.id, roles: req.user.roles || [] });
+  }
+
   @Delete(':id')
   remove(@Request() req: any, @Param('id') id: string) {
     return this.designsService.remove(req.user.id, id);

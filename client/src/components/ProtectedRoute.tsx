@@ -52,7 +52,21 @@ const ProtectedRoute = ({ children, allowedRoles }: ProtectedRouteProps) => {
       return <Navigate to={isSupplierOrAdmin ? "/admin" : "/dashboard"} replace />;
     }
   } else if (isSupplierOrAdmin && !location.pathname.startsWith("/admin")) {
-    // If no roles specified and supplier tries to access standard route (like /design-studio), block them
+    // Suppliers can use the same shopping / design flow as customers; other non-admin areas redirect to the dashboard
+    const customerFlowPaths = [
+      "/design-studio",
+      "/order-summary",
+      "/address",
+      "/my-designs",
+      "/my-orders",
+      "/payment-success",
+    ];
+    const isCustomerFlow = customerFlowPaths.some(
+      (p) => location.pathname === p || location.pathname.startsWith(`${p}/`),
+    );
+    if (isCustomerFlow) {
+      return <>{children}</>;
+    }
     return <Navigate to="/admin" replace />;
   }
 

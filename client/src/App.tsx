@@ -19,6 +19,7 @@ import Address from "./pages/Address";
 import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 import SupplierPricing from "./pages/SupplierPricing";
+import SupplierDesigns from "./pages/SupplierDesigns";
 
 // Removed clearOldSessions() to fix persistent login issue
 
@@ -106,6 +107,14 @@ const App = () => (
             element={
               <ProtectedRoute allowedRoles={['supplier']}>
                 <SupplierPricing />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/designs"
+            element={
+              <ProtectedRoute allowedRoles={['supplier', 'admin']}>
+                <SupplierDesigns />
               </ProtectedRoute>
             }
           />

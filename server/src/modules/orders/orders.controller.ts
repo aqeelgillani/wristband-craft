@@ -29,7 +29,11 @@ export class OrdersController {
   }
 
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateOrderStatusDto) {
-    return this.ordersService.updateStatus(id, dto);
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateOrderStatusDto,
+    @Request() req: any,
+  ) {
+    return this.ordersService.updateStatus(id, dto, { id: req.user.id, roles: req.user.roles || [] });
   }
 }

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, ShoppingCart, Check } from "lucide-react";
 
@@ -35,6 +36,7 @@ const Address = () => {
   const [loading, setLoading] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
+  const [customizationNotes, setCustomizationNotes] = useState("");
 
   useEffect(() => {
     fetchSuppliers();
@@ -122,6 +124,7 @@ const Address = () => {
                 status: "pending",
                 paymentStatus: "pending",
                 hasSecureGuests: orderDetails.has_qr_code || false,
+                customizationNotes: customizationNotes.trim() || undefined,
               }),
             });
             
@@ -352,6 +355,18 @@ const Address = () => {
                   value={shippingAddress.phone} 
                   onChange={handleInputChange} 
                   className="mt-2"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="customizationNotes">Extra customization notes (optional)</Label>
+                <Textarea
+                  id="customizationNotes"
+                  value={customizationNotes}
+                  onChange={(e) => setCustomizationNotes(e.target.value)}
+                  className="mt-2"
+                  rows={3}
+                  placeholder="Tell the manufacturer any extra details. Final price still follows the supplier’s pricing table."
                 />
               </div>
 

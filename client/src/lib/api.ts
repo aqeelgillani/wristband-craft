@@ -27,7 +27,9 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(data?.message || response.statusText || 'API request failed');
+    const msg = data?.message;
+    const asText = Array.isArray(msg) ? msg.join(', ') : (typeof msg === 'string' ? msg : null);
+    throw new Error(asText || data?.error || response.statusText || 'API request failed');
   }
 
   return data;

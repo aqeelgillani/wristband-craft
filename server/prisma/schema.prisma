@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
 }
 
 model Profile {
@@ -29,6 +28,7 @@ model Order {
   userId                 String    @map("user_id")
   designId               String?   @map("design_id")
   supplierId             String?   @map("supplier_id")
+  productId              String?   @map("product_id")
 
   quantity               Int
   totalPrice             Float     @map("total_price")
@@ -45,6 +45,8 @@ model Order {
   shippingAddress        String?   @map("shipping_address")
   extraCharges           String?   @map("extra_charges")
   adminNotes             String?   @map("admin_notes")
+  customizationNotes     String?   @map("customization_notes")
+  wristbandSize          String?   @map("wristband_size")
 
   stripePaymentIntentId  String?   @map("stripe_payment_intent_id")
   stripeSessionId        String?   @map("stripe_session_id")
@@ -54,31 +56,69 @@ model Order {
   user       Profile   @relation(fields: [userId], references: [id])
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
   design     Design?   @relation(fields: [designId], references: [id])
+  product    Product?  @relation(fields: [productId], references: [id])
 
   @@map("orders")
 }
 
 model Design {
-  id             String    @id @default(uuid())
-  userId         String    @map("user_id")
+  id                String    @id @default(uuid())
+  userId            String    @map("user_id")
+  productId         String?   @map("product_id")
+  designName        String?   @map("design_name")
 
-  designUrl      String    @map("design_url")
-  customText     String?   @map("custom_text")
-  textColor      String?   @map("text_color")
-  textPosition   String?   @map("text_position")
+  designUrl         String    @map("design_url")
+  customText        String?   @map("custom_text")
+  textColor         String?   @map("text_color")
+  textPosition      String?   @map("text_position")
+  fontFamily        String?   @default("Arial") @map("font_family")
+  fontSize          Int?      @default(14) @map("font_size")
 
-  wristbandColor String?   @map("wristband_color")
-  wristbandType  String?   @map("wristband_type")
+  logoUrl           String?   @map("logo_url")
+  logoPosition      String?   @map("logo_position")
+  logoScale         Float?    @default(1.0) @map("logo_scale")
 
-  canvasJson     String?   @map("canvas_json")
+  wristbandColor    String?   @map("wristband_color")
+  wristbandType     String?   @map("wristband_type")
+  wristbandSize     String?   @default("M") @map("wristband_size")
+  customWidthMm     Float?    @map("custom_width_mm")
 
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  innerText         String?   @map("inner_text")
+  innerTextColor    String?   @default("#FFFFFF") @map("inner_text_color")
+  pattern           String?   @default("solid")
+  secondaryColor    String?   @map("secondary_color")
 
-  user   Profile @relation(fields: [userId], references: [id])
-  orders Order[]
+  clipArtId         String?   @map("clip_art_id")
+  clipArtPosition   String?   @map("clip_art_position")
+
+  canvasJson        String?   @map("canvas_json")
+
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  user         Profile       @relation(fields: [userId], references: [id])
+  product      Product?      @relation(fields: [productId], references: [id])
+  orders       Order[]
+  designImages DesignImage[]
 
   @@map("designs")
+}
+
+model DesignImage {
+  id         String @id @default(uuid())
+  designId   String @map("design_id")
+  imageUrl   String @map("image_url")
+  imageType  String @default("logo") @map("image_type") // logo, clip_art, pattern, background
+  position   String @default("{\"x\": 50, \"y\": 50}")
+  scale      Float  @default(1.0)
+  rotation   Float  @default(0)
+  layerOrder Int    @default(0) @map("layer_order")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  design Design @relation(fields: [designId], references: [id], onDelete: Cascade)
+
+  @@map("design_images")
 }
 
 model Supplier {
@@ -89,15 +129,81 @@ model Supplier {
   contactEmail  String   @map("contact_email")
   contactPhone  String?  @map("contact_phone")
   address       String?  @map("address")
+  logoUrl       String?  @map("logo_url")
+  description   String?
+  website       String?
+  city          String?
+  country       String?
+  rating        Float    @default(0)
+  totalOrders   Int      @default(0) @map("total_orders")
+  isVerified    Boolean  @default(false) @map("is_verified")
 
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  user          Profile  @relation(fields: [userId], references: [id])
-  orders        Order[]
+  user           Profile         @relation(fields: [userId], references: [id])
+  orders         Order[]
+  products       Product[]
   pricingConfigs PricingConfig[]
 
   @@map("suppliers")
+}
+
+model Product {
+  id           String  @id @default(uuid())
+  supplierId   String  @map("supplier_id")
+  name         String
+  description  String?
+  wristbandType String @map("wristband_type")
+
+  // Supplier-set pricing
+  priceUsd Float @map("price_usd")
+  priceEur Float? @map("price_eur")
+  priceGbp Float? @map("price_gbp")
+
+  // Customization pricing add-ons
+  printExtraUsd      Float @default(0) @map("print_extra_usd")
+  colorPrintExtraUsd Float @default(0) @map("color_print_extra_usd")
+  logoExtraUsd       Float @default(0) @map("logo_extra_usd")
+
+  minOrderQuantity Int      @default(1) @map("min_order_quantity")
+  maxOrderQuantity Int?     @map("max_order_quantity")
+  isActive         Boolean  @default(true) @map("is_active")
+  imageUrls        String   @default("[]") @map("image_urls") // JSON string
+
+  // Customization flags
+  allowsCustomText  Boolean @default(true) @map("allows_custom_text")
+  allowsCustomColor Boolean @default(true) @map("allows_custom_color")
+  allowsLogoUpload  Boolean @default(true) @map("allows_logo_upload")
+  allowsInnerText   Boolean @default(false) @map("allows_inner_text")
+  availableSizes    String  @default("[\"S\",\"M\",\"L\",\"XL\"]") @map("available_sizes")
+  availableColors   String  @default("[]") @map("available_colors")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  supplier     Supplier               @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  pricingTiers SupplierPricingTier[]
+  designs      Design[]
+  orders       Order[]
+
+  @@map("products")
+}
+
+model SupplierPricingTier {
+  id              String @id @default(uuid())
+  productId       String @map("product_id")
+  minQuantity     Int    @map("min_quantity")
+  maxQuantity     Int?   @map("max_quantity")
+  pricePerUnitUsd Float  @map("price_per_unit_usd")
+  pricePerUnitEur Float? @map("price_per_unit_eur")
+  pricePerUnitGbp Float? @map("price_per_unit_gbp")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@map("supplier_pricing_tiers")
 }
 
 model UserRole {

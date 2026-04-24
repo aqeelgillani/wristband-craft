@@ -54,6 +54,10 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   adminNotes?: string;
+
+  @IsOptional()
+  @IsString()
+  customizationNotes?: string;
 }
 
 export class UpdateOrderStatusDto {

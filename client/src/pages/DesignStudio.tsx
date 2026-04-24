@@ -106,10 +106,21 @@ const uploadDesignImage = async (dataUrl: string): Promise<string> => {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: formData,
   });
-  if (!response.ok) {
-    throw new Error("Failed to upload design image");
+  const raw = await response.text();
+  let data: { url?: string; message?: string | string[] } = {};
+  try {
+    data = raw ? JSON.parse(raw) : {};
+  } catch {
+    data = { message: raw || response.statusText };
   }
-  const data = await response.json();
+  if (!response.ok) {
+    const m = data.message;
+    const detail = Array.isArray(m) ? m.join(", ") : m || raw || `Upload failed (${response.status})`;
+    throw new Error(detail);
+  }
+  if (!data.url) {
+    throw new Error("Upload did not return an image URL");
+  }
   return data.url;
 };
 
@@ -732,12 +743,20 @@ const DesignStudio = () => {
       toast.error("Please create a design");
       return;
     }
+    if (!selectedSupplierId?.trim()) {
+      toast.error("Select a supplier first — prices and fulfillment come from the supplier you choose");
+      return;
+    }
     if (quantity < 1000) {
       toast.error("Minimum quantity is 1000 pieces");
       return;
     }
     if (!pricing) {
       toast.error("Please wait for pricing to load");
+      return;
+    }
+    if (!Number.isFinite(pricing.totalPrice) || !Number.isFinite(quantity)) {
+      toast.error("Invalid price; adjust options and try again");
       return;
     }
 
@@ -1145,7 +1164,10 @@ const DesignStudio = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1 text-primary/80">Select a supplier to see their specific pricing</p>
+                <p className="text-xs text-muted-foreground mt-1 text-primary/80">
+                  You design here; the supplier sets prices (in their dashboard). Your totals update from their price book when you
+                  change options.
+                </p>
               </div>
               <div className="border-t pt-4">
                 <Label>Quantity (Min {pricing?.minQuantity || 1000} pcs)</Label>
