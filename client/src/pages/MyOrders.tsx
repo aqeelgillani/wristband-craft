@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getOrderTimeline, getOrderTracking, type OrderTimelineItem, type OrderTracking } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +28,10 @@ interface Order {
 const MyOrders = () => {
   const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
+  const [trackingByOrderId, setTrackingByOrderId] = useState<Record<string, OrderTracking>>({});
+  const [timelineByOrderId, setTimelineByOrderId] = useState<Record<string, OrderTimelineItem[]>>({});
+  const [loadingTrackingId, setLoadingTrackingId] = useState<string | null>(null);
+  const [loadingTimelineId, setLoadingTimelineId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -46,15 +50,38 @@ const MyOrders = () => {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "bg-yellow-500";
-      case "processing":
-        return "bg-blue-500";
-      case "completed":
-        return "bg-green-500";
-      default:
-        return "bg-gray-500";
+    const normalized = status.toUpperCase();
+    if (normalized === "PLACED") return "bg-yellow-500";
+    if (normalized === "ACCEPTED" || normalized === "IN_PRODUCTION") return "bg-blue-500";
+    if (normalized === "SHIPPED") return "bg-indigo-500";
+    if (normalized === "DELIVERED") return "bg-green-500";
+    if (normalized === "CANCELLED") return "bg-red-500";
+    return "bg-gray-500";
+  };
+
+  const loadTracking = async (orderId: string) => {
+    if (trackingByOrderId[orderId]) return;
+    setLoadingTrackingId(orderId);
+    try {
+      const tracking = await getOrderTracking(orderId);
+      setTrackingByOrderId((prev) => ({ ...prev, [orderId]: tracking }));
+    } catch {
+      toast.error("Could not load tracking details");
+    } finally {
+      setLoadingTrackingId(null);
+    }
+  };
+
+  const loadTimeline = async (orderId: string) => {
+    if (timelineByOrderId[orderId]) return;
+    setLoadingTimelineId(orderId);
+    try {
+      const timeline = await getOrderTimeline(orderId);
+      setTimelineByOrderId((prev) => ({ ...prev, [orderId]: timeline }));
+    } catch {
+      toast.error("Could not load order timeline");
+    } finally {
+      setLoadingTimelineId(null);
     }
   };
 
@@ -146,6 +173,22 @@ const MyOrders = () => {
                       )}
                       
                       <div className="flex gap-2 pt-4 justify-end border-t mt-4">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => loadTracking(order.id)}
+                          disabled={loadingTrackingId === order.id}
+                        >
+                          {loadingTrackingId === order.id ? "Loading..." : "Track Order"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => loadTimeline(order.id)}
+                          disabled={loadingTimelineId === order.id}
+                        >
+                          {loadingTimelineId === order.id ? "Loading..." : "View Timeline"}
+                        </Button>
                         {order.design?.designUrl && (
                           <Button 
                             variant="outline" 
@@ -184,6 +227,64 @@ const MyOrders = () => {
                           Customize again
                         </Button>
                       </div>
+                      {trackingByOrderId[order.id] && (
+                        <div className="mt-3 rounded border p-3 text-sm bg-muted/40">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Courier:</span>
+                            <span>{trackingByOrderId[order.id].courier || "-"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Tracking No:</span>
+                            <span>{trackingByOrderId[order.id].trackingNumber || "-"}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Shipped At:</span>
+                            <span>
+                              {trackingByOrderId[order.id].shippedAt
+                                ? new Date(trackingByOrderId[order.id].shippedAt as string).toLocaleString()
+                                : "-"}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Estimated Delivery:</span>
+                            <span>
+                              {trackingByOrderId[order.id].estimatedDelivery
+                                ? new Date(trackingByOrderId[order.id].estimatedDelivery as string).toLocaleDateString()
+                                : "-"}
+                            </span>
+                          </div>
+                          {trackingByOrderId[order.id].trackingUrl && (
+                            <div className="pt-2">
+                              <a
+                                href={trackingByOrderId[order.id].trackingUrl as string}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-primary underline"
+                              >
+                                Open tracking link
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {timelineByOrderId[order.id] && (
+                        <div className="mt-3 rounded border p-3 text-sm bg-muted/40">
+                          <div className="font-semibold mb-2">Order Timeline</div>
+                          <div className="space-y-2">
+                            {timelineByOrderId[order.id].map((item) => (
+                              <div key={item.id} className="flex items-start justify-between gap-3 border-b pb-2 last:border-b-0 last:pb-0">
+                                <div>
+                                  <div className="font-medium">{item.toStatus}</div>
+                                  {item.note && <div className="text-muted-foreground">{item.note}</div>}
+                                </div>
+                                <div className="text-muted-foreground whitespace-nowrap">
+                                  {new Date(item.createdAt).toLocaleString()}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>

@@ -791,7 +791,7 @@ const DesignStudio = () => {
           currency,
           printType,
           extraCharges: pricing.extraCharges,
-          status: "pending",
+          status: "PLACED",
           supplierId: selectedSupplierId,
           adminNotes: `Trademark: ${hasTrademark ? trademarkText : "No"}, QR Code: ${hasQrCode ? "Yes" : "No"}`,
         }),

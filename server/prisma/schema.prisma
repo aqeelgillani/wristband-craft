@@ -50,6 +50,14 @@ model Order {
 
   stripePaymentIntentId  String?   @map("stripe_payment_intent_id")
   stripeSessionId        String?   @map("stripe_session_id")
+  trackingNumber         String?   @map("tracking_number")
+  trackingUrl            String?   @map("tracking_url")
+  courier                String?
+  estimatedDelivery      DateTime? @map("estimated_delivery")
+  shippedAt              DateTime? @map("shipped_at")
+  deliveredAt            DateTime? @map("delivered_at")
+  pricingSnapshotJson    String?   @map("pricing_snapshot_json")
+  designSnapshotJson     String?   @map("design_snapshot_json")
 
   createdAt              DateTime  @default(now()) @map("created_at")
 
@@ -57,8 +65,23 @@ model Order {
   supplier   Supplier? @relation(fields: [supplierId], references: [id])
   design     Design?   @relation(fields: [designId], references: [id])
   product    Product?  @relation(fields: [productId], references: [id])
+  statusHistory OrderStatusHistory[]
 
   @@map("orders")
+}
+
+model OrderStatusHistory {
+  id          String   @id @default(uuid())
+  orderId     String   @map("order_id")
+  fromStatus  String?  @map("from_status")
+  toStatus    String   @map("to_status")
+  note        String?
+  updatedByUserId String? @map("updated_by_user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("order_status_history")
 }
 
 model Design {

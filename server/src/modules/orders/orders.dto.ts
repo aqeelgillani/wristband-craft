@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class CreateOrderDto {
   @IsOptional()
@@ -66,6 +66,10 @@ export class UpdateOrderStatusDto {
 
   @IsOptional()
   @IsString()
+  note?: string;
+
+  @IsOptional()
+  @IsString()
   paymentStatus?: string;
 
   @IsOptional()
@@ -77,6 +81,34 @@ export class UpdateOrderStatusDto {
   @IsOptional()
   @IsNumber()
   totalPrice?: number;
+}
+
+export class OrderTimelineQueryDto {
+  @IsOptional()
+  @IsString()
+  orderId?: string;
+}
+
+export class UpdateShipmentDto {
+  @IsOptional()
+  @IsString()
+  trackingNumber?: string;
+
+  @IsOptional()
+  @IsString()
+  trackingUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  courier?: string;
+
+  @IsOptional()
+  @IsDateString()
+  estimatedDelivery?: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
 }
 
 export class BulkOrderUpdateDto {

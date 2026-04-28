@@ -42,3 +42,33 @@ export function setToken(token: string) {
 export function clearToken() {
   localStorage.removeItem('token');
 }
+
+export interface OrderTracking {
+  orderId: string;
+  status: string;
+  trackingNumber?: string | null;
+  trackingUrl?: string | null;
+  courier?: string | null;
+  estimatedDelivery?: string | null;
+  shippedAt?: string | null;
+  deliveredAt?: string | null;
+  createdAt: string;
+}
+
+export function getOrderTracking(orderId: string) {
+  return apiFetch(`/orders/${orderId}/tracking`) as Promise<OrderTracking>;
+}
+
+export interface OrderTimelineItem {
+  id: string;
+  orderId: string;
+  fromStatus?: string | null;
+  toStatus: string;
+  note?: string | null;
+  updatedByUserId?: string | null;
+  createdAt: string;
+}
+
+export function getOrderTimeline(orderId: string) {
+  return apiFetch(`/orders/${orderId}/timeline`) as Promise<OrderTimelineItem[]>;
+}
