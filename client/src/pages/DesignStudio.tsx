@@ -341,13 +341,11 @@ const DesignStudio = () => {
 
   useEffect(() => {
     const fetchPricing = async () => {
-      if (quantity < 1000) return;
       if (!selectedSupplierId) return;
       
       setLoadingPrice(true);
       try {
-        // Find config for this writstbandType
-        const defaultConfig = DEFAULT_CONFIG; // Import or define DEFAULT_CONFIG above if not present
+        // Find config for this wristbandType
         const config = supplierConfigs.find(c => c.wristbandType === wristbandType) || undefined;
         
         // Base price
@@ -747,12 +745,13 @@ const DesignStudio = () => {
       toast.error("Select a supplier first — prices and fulfillment come from the supplier you choose");
       return;
     }
-    if (quantity < 1000) {
-      toast.error("Minimum quantity is 1000 pieces");
-      return;
-    }
     if (!pricing) {
       toast.error("Please wait for pricing to load");
+      return;
+    }
+    const minQty = pricing.minQuantity || 1000;
+    if (quantity < minQty) {
+      toast.error(`Minimum quantity is ${minQty} pieces`);
       return;
     }
     if (!Number.isFinite(pricing.totalPrice) || !Number.isFinite(quantity)) {
@@ -814,6 +813,7 @@ const DesignStudio = () => {
             has_trademark: hasTrademark,
             trademark_text: trademarkText,
             has_qr_code: hasQrCode,
+            supplierId: selectedSupplierId,
           },
           canvasJson: fabricCanvas.toJSON(),
           created_at: new Date().toISOString(),

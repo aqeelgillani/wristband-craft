@@ -134,11 +134,15 @@ const OrderSummary = () => {
       return;
     }
 
+    // Get supplier ID from first design if available
+    const supplierId = designsInCart[0]?.orderDetails?.supplierId || state?.orderDetails?.supplierId;
+
     // Navigate to address entry page (addresses are handled on another page)
     navigate("/address", {
       state: {
         designs: designsInCart,
         expressDelivery,
+        selectedSupplierId: supplierId,
       },
     });
   };

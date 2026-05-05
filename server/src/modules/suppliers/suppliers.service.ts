@@ -85,6 +85,17 @@ export class SuppliersService {
 
     return this.prisma.pricingConfig.findMany({
       where: { supplierId: supplier.id },
+      orderBy: { wristbandType: 'asc' },
+    });
+  }
+
+  async getPricingForSupplier(supplierId: string) {
+    const supplier = await this.prisma.supplier.findUnique({ where: { id: supplierId } });
+    if (!supplier) throw new BadRequestException('Supplier not found');
+
+    return this.prisma.pricingConfig.findMany({
+      where: { supplierId },
+      orderBy: { wristbandType: 'asc' },
     });
   }
 
@@ -92,23 +103,52 @@ export class SuppliersService {
     const supplier = await this.prisma.supplier.findUnique({ where: { userId } });
     if (!supplier) throw new BadRequestException('Not a supplier');
 
-    // dto should be an array of pricing configs or a single object.
-    // If it's an array, we upsert them.
-    const configs = Array.isArray(dto) ? dto : [dto];
-    
-    for (const config of configs) {
-      if (config.id) {
+    // If it's a single object, first check if a config for this wristband type already exists
+    if (!Array.isArray(dto)) {
+      const existingConfig = await this.prisma.pricingConfig.findFirst({
+        where: { supplierId: supplier.id, wristbandType: dto.wristbandType },
+      });
+
+      if (existingConfig) {
         await this.prisma.pricingConfig.update({
-          where: { id: config.id },
-          data: { ...config, supplierId: supplier.id },
+          where: { id: existingConfig.id },
+          data: { ...dto, supplierId: supplier.id },
         });
       } else {
         await this.prisma.pricingConfig.create({
-          data: { ...config, supplierId: supplier.id },
+          data: { ...dto, supplierId: supplier.id },
         });
+      }
+    } else {
+      // Handle array of configs
+      const configs = dto as any[];
+      for (const config of configs) {
+        if (config.id) {
+          await this.prisma.pricingConfig.update({
+            where: { id: config.id },
+            data: { ...config, supplierId: supplier.id },
+          });
+        } else {
+          const existingConfig = await this.prisma.pricingConfig.findFirst({
+            where: { supplierId: supplier.id, wristbandType: config.wristbandType },
+          });
+          if (existingConfig) {
+            await this.prisma.pricingConfig.update({
+              where: { id: existingConfig.id },
+              data: { ...config, supplierId: supplier.id },
+            });
+          } else {
+            await this.prisma.pricingConfig.create({
+              data: { ...config, supplierId: supplier.id },
+            });
+          }
+        }
       }
     }
     
-    return this.prisma.pricingConfig.findMany({ where: { supplierId: supplier.id } });
+    return this.prisma.pricingConfig.findMany({ 
+      where: { supplierId: supplier.id },
+      orderBy: { wristbandType: 'asc' },
+    });
   }
 }

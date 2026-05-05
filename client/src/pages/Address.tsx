@@ -12,6 +12,7 @@ import { ArrowLeft, Loader2, ShoppingCart, Check } from "lucide-react";
 interface LocationState {
   designs: any[];
   expressDelivery?: boolean;
+  selectedSupplierId?: string;
 }
 
 interface Supplier {
@@ -35,7 +36,7 @@ const Address = () => {
   });
   const [loading, setLoading] = useState(false);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>(state.selectedSupplierId || "");
   const [customizationNotes, setCustomizationNotes] = useState("");
 
   useEffect(() => {
@@ -46,7 +47,8 @@ const Address = () => {
     const data = await apiFetch("/suppliers").catch(() => []);
     if (data) {
       setSuppliers(data);
-      if (data.length > 0) {
+      // Only set default if not already set from state
+      if (!selectedSupplierId && data.length > 0) {
         setSelectedSupplierId(data[0].id);
       }
     }
@@ -121,7 +123,7 @@ const Address = () => {
                 currency: orderDetails.currency || "EUR",
                 printType: orderDetails.print_type || "none",
                 extraCharges: orderDetails.extra_charges || {},
-                status: "pending",
+                status: "PLACED",
                 paymentStatus: "pending",
                 hasSecureGuests: orderDetails.has_qr_code || false,
                 customizationNotes: customizationNotes.trim() || undefined,
@@ -162,11 +164,16 @@ const Address = () => {
         const newExtras = { ...existingExtras, express: expressValue };
         const currentTotal = order.totalPrice ? Number(order.totalPrice) : 0;
         const newTotal = currentTotal + expressValue;
+        
+        // Only try to update status if not already PLACED/ACCEPTED
+        const normalizedStatus = (order.status || '').trim().toUpperCase();
+        const nextStatus = normalizedStatus === 'DRAFT' ? 'PLACED' : normalizedStatus;
+        
         await apiFetch(`/orders/${order.id}/status`, {
           method: "PATCH",
           body: JSON.stringify({
-            status: order.status,
-            paymentStatus: order.paymentStatus,
+            status: nextStatus,
+            paymentStatus: order.paymentStatus || 'pending',
             shippingAddress,
             extraCharges: newExtras,
             totalPrice: newTotal,

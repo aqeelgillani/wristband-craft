@@ -28,7 +28,7 @@ const PaymentSuccess = () => {
       try {
         await apiFetch(`/orders/${orderId}/status`, {
           method: "PATCH",
-          body: JSON.stringify({ status: "approved", paymentStatus: "paid" }),
+          body: JSON.stringify({ status: "ACCEPTED", paymentStatus: "paid" }),
         });
         if (orderId) {
           toast.success("Payment successful! Your order has been confirmed.");
