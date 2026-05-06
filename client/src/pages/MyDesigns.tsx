@@ -45,26 +45,26 @@ const MyDesigns = () => {
     }
   };
 
-  const handleOrder = async (design: Design) => {
-    try {
-      await apiFetch("/orders", {
-        method: "POST",
-        body: JSON.stringify({
+  const handleOrder = (design: Design) => {
+    navigate("/design-studio", {
+      state: {
+        editDesign: {
+          orderDetails: {
+            wristband_color: design.wristbandColor,
+            wristband_type: "tyvek",
+            quantity: 1000,
+            print_type: "none",
+            has_trademark: false,
+            trademark_text: design.customText || "",
+            trademark_text_color: design.textColor === "#FFFFFF" ? "white" : "black",
+            has_qr_code: false,
+            has_print: false,
+          },
+          designUrl: design.designUrl,
           designId: design.id,
-          quantity: 1000,
-          totalPrice: 39,
-          unitPrice: 0.039,
-          status: "pending",
-          paymentStatus: "pending",
-          currency: "EUR",
-          wristbandType: "tyvek",
-        }),
-      });
-      toast.success("Order placed successfully!");
-      navigate("/my-orders");
-    } catch {
-      toast.error("Failed to place order");
-    }
+        },
+      },
+    });
   };
 
   return (

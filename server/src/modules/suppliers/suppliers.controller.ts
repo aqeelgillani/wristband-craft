@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { SuppliersService } from './suppliers.service';
 import { SupplierRegisterDto } from './suppliers.dto';
@@ -33,5 +33,39 @@ export class SuppliersController {
   @Post('me/pricing')
   updatePricing(@Request() req: any, @Body() dto: any) {
     return this.suppliersService.updatePricing(req.user.id, dto);
+  }
+
+  @Get(':id/pricing')
+  getSupplierPricing(@Param('id') id: string) {
+    return this.suppliersService.getPricingBySupplierId(id);
+  }
+
+  @Get(':id/products')
+  getSupplierProducts(@Param('id') id: string) {
+    return this.suppliersService.getProductsBySupplierId(id);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Get('me/products')
+  getMyProducts(@Request() req: any) {
+    return this.suppliersService.getMyProducts(req.user.id);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Post('me/products')
+  createProduct(@Request() req: any, @Body() dto: any) {
+    return this.suppliersService.createProduct(req.user.id, dto);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Patch('me/products/:productId')
+  updateProduct(@Request() req: any, @Param('productId') productId: string, @Body() dto: any) {
+    return this.suppliersService.updateProduct(req.user.id, productId, dto);
+  }
+
+  @UseGuards(AuthGuard('jwt'))
+  @Delete('me/products/:productId')
+  deleteProduct(@Request() req: any, @Param('productId') productId: string) {
+    return this.suppliersService.deleteProduct(req.user.id, productId);
   }
 }

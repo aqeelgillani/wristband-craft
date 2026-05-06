@@ -8,7 +8,7 @@ import { SuppliersController } from './suppliers.controller';
   imports: [
     PrismaModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'topSecretJWT',
+      secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: '7d' },
     }),
   ],

@@ -339,6 +339,17 @@ export class OrdersService {
     });
   }
 
+  async deleteDraft(orderId: string, userId: string) {
+    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    if (!order) throw new NotFoundException('Order not found');
+    if (order.userId !== userId) throw new ForbiddenException();
+    if (order.status !== ORDER_STATUS.DRAFT) {
+      throw new BadRequestException('Only DRAFT orders can be deleted');
+    }
+    await this.prisma.order.delete({ where: { id: orderId } });
+    return { success: true };
+  }
+
   async getTracking(orderId: string, user: { id: string; roles: string[] }) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },

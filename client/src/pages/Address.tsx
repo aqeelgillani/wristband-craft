@@ -10,13 +10,8 @@ import { toast } from "sonner";
 import { ArrowLeft, Loader2, ShoppingCart, Check } from "lucide-react";
 
 interface LocationState {
-  designs: any[];
+  orderIds: string[];
   expressDelivery?: boolean;
-}
-
-interface Supplier {
-  id: string;
-  companyName: string;
 }
 
 const Address = () => {
@@ -24,6 +19,8 @@ const Address = () => {
   const location = useLocation();
   const state = (location.state || {}) as LocationState;
 
+  const [draftOrders, setDraftOrders] = useState<any[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(true);
   const [shippingAddress, setShippingAddress] = useState({
     name: "",
     address: "",
@@ -33,167 +30,84 @@ const Address = () => {
     country: "",
     phone: "",
   });
-  const [loading, setLoading] = useState(false);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [customizationNotes, setCustomizationNotes] = useState("");
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    fetchSuppliers();
-  }, []);
-
-  const fetchSuppliers = async () => {
-    const data = await apiFetch("/suppliers").catch(() => []);
-    if (data) {
-      setSuppliers(data);
-      if (data.length > 0) {
-        setSelectedSupplierId(data[0].id);
-      }
+    if (!state.orderIds || state.orderIds.length === 0) {
+      toast.error("No orders to checkout");
+      navigate("/order-summary");
+      return;
     }
-  };
+
+    const loadOrders = async () => {
+      try {
+        const all: any[] = await apiFetch("/orders/mine");
+        const relevant = (all || []).filter(o => state.orderIds.includes(o.id));
+        setDraftOrders(relevant);
+      } catch {
+        toast.error("Failed to load orders");
+        navigate("/order-summary");
+      } finally {
+        setLoadingOrders(false);
+      }
+    };
+    loadOrders();
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setShippingAddress({ ...shippingAddress, [e.target.name]: e.target.value });
   };
 
   const handleSubmit = async () => {
-    // Validate required fields
     if (!shippingAddress.name || !shippingAddress.address || !shippingAddress.city || !shippingAddress.zipCode || !shippingAddress.country) {
       toast.error("Please fill all required address fields");
       return;
     }
 
-    if (!selectedSupplierId) {
-      toast.error("Please select a supplier");
-      return;
-    }
-
-    if (!state.designs || state.designs.length === 0) {
-      toast.error("No designs to checkout");
-      return;
-    }
-
     setLoading(true);
-    
     try {
-      console.log("Processing checkout for", state.designs.length, "designs");
-
-      // Collect all order IDs (create orders if needed)
-      const orderIds: string[] = [];
-      
-      for (const d of state.designs) {
-        let orderId = d.orderId || d.order_id || null;
-        
-        // If no orderId exists, create order in database now
-        if (!orderId) {
-          console.log("Creating new order for design");
-          
-          try {
-            let designId = d.design_id || null;
-            let designUrl = d.designUrl;
-            
-            // Create design record if needed
-            if (!designId) {
-              const designData = await apiFetch("/designs", {
-                method: "POST",
-                body: JSON.stringify({
-                  designUrl,
-                  wristbandColor: d.orderDetails?.wristband_color || "#FFFFFF",
-                  wristbandType: d.orderDetails?.wristband_type || "tyvek",
-                }),
-              });
-              
-              designId = designData.id;
-              console.log("Design created:", designId);
-            }
-            
-            // Create order record
-            const orderDetails = d.orderDetails || {};
-            const orderData = await apiFetch("/orders", {
-              method: "POST",
-              body: JSON.stringify({
-                designId,
-                supplierId: selectedSupplierId,
-                quantity: orderDetails.quantity || 1000,
-                totalPrice: orderDetails.total_price || 0,
-                unitPrice: orderDetails.unit_price || 0,
-                basePrice: orderDetails.base_price || 0,
-                currency: orderDetails.currency || "EUR",
-                printType: orderDetails.print_type || "none",
-                extraCharges: orderDetails.extra_charges || {},
-                status: "pending",
-                paymentStatus: "pending",
-                hasSecureGuests: orderDetails.has_qr_code || false,
-                customizationNotes: customizationNotes.trim() || undefined,
-              }),
-            });
-            
-            orderId = orderData.id;
-            console.log("Order created:", orderId);
-          } catch (err: any) {
-            console.error("Failed to create order for design:", err);
-            throw err;
-          }
-        }
-
-        orderIds.push(orderId);
-      }
-
-      if (orderIds.length === 0) {
-        toast.error("No orders found to checkout");
-        setLoading(false);
-        return;
-      }
-
-      console.log("Updating orders:", orderIds);
-
-      // Update ALL orders at once with shipping address and express charges
       const expressValue = state.expressDelivery ? 19 : 0;
 
-      // Fetch all orders to get current totals
-      const ordersData = await apiFetch("/orders");
-
-      // Update each order individually with merged extras
-      for (const order of (ordersData || []).filter((o: any) => orderIds.includes(o.id))) {
-        const existingExtras = (order.extraCharges && typeof order.extraCharges === 'object') 
-          ? order.extraCharges 
-          : {};
-        
+      for (const order of draftOrders) {
+        const existingExtras = order.extraCharges && typeof order.extraCharges === "object" ? order.extraCharges : {};
         const newExtras = { ...existingExtras, express: expressValue };
-        const currentTotal = order.totalPrice ? Number(order.totalPrice) : 0;
-        const newTotal = currentTotal + expressValue;
+        const newTotal = (order.totalPrice || 0) + expressValue;
+
         await apiFetch(`/orders/${order.id}/status`, {
           method: "PATCH",
           body: JSON.stringify({
-            status: order.status,
-            paymentStatus: order.paymentStatus,
+            status: "PLACED",
+            paymentStatus: "pending",
             shippingAddress,
             extraCharges: newExtras,
             totalPrice: newTotal,
+            note: customizationNotes || undefined,
           }),
         });
       }
 
       toast.success("Address saved. Redirecting to payment confirmation...");
-      navigate(`/payment-success?order_id=${orderIds[0]}`);
+      navigate(`/payment-success?order_id=${state.orderIds[0]}`);
     } catch (error: any) {
-      console.error("Checkout error:", error);
       toast.error(error.message || "An error occurred while processing your order");
+    } finally {
       setLoading(false);
     }
   };
 
-  // Use currency from first design's order details
-  const currencySymbol = state.designs?.[0]?.orderDetails?.currency === "USD" 
-    ? "$" 
-    : state.designs?.[0]?.orderDetails?.currency === "EUR" 
-    ? "€" 
-    : "£";
+  if (loadingOrders) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
-  // Calculate total of all designs plus express delivery if selected
-  const subtotal = state.designs?.reduce((sum, d) => sum + (d.orderDetails?.total_price || 0), 0) || 0;
+  const currency = draftOrders[0]?.currency || "EUR";
+  const currencySymbol = currency === "USD" ? "$" : currency === "GBP" ? "£" : "€";
+  const subtotal = draftOrders.reduce((sum, o) => sum + (o.totalPrice || 0), 0);
   const expressDeliveryFee = state.expressDelivery ? 19 : 0;
-  const total = subtotal + expressDeliveryFee;
 
   return (
     <div className="min-h-screen bg-gradient-subtle">
@@ -211,47 +125,33 @@ const Address = () => {
 
       <main className="container mx-auto px-4 py-8">
         <div className="grid lg:grid-cols-2 gap-8">
-          {/* Order Summary */}
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Order Summary</h2>
-            
-            {/* Design Previews */}
             <div className="space-y-4">
-              {state.designs?.map((design, idx) => (
-                <div key={idx} className="bg-muted rounded-lg p-4">
+              {draftOrders.map((order, idx) => (
+                <div key={order.id} className="bg-muted rounded-lg p-4">
                   <h3 className="text-sm font-medium mb-2">Design {idx + 1}</h3>
-                  <img 
-                    src={design.designUrl} 
-                    alt={`Wristband Design ${idx + 1}`} 
-                    className="w-full h-auto rounded-lg shadow-lg mb-3"
-                  />
+                  {order.design?.designUrl && (
+                    <img src={order.design.designUrl} alt={`Design ${idx + 1}`} className="w-full h-auto rounded-lg shadow-lg mb-3" />
+                  )}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Quantity:</span>
-                      <span className="font-medium">{design.orderDetails?.quantity || 0} pcs</span>
+                      <span className="font-medium">{order.quantity} pcs</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-muted-foreground">Type:</span>
-                      <span className="font-medium capitalize">{design.orderDetails?.wristband_type || "N/A"}</span>
+                      <span className="font-medium capitalize">{order.wristbandType || "—"}</span>
                     </div>
-                    {design.orderDetails?.print_type && design.orderDetails.print_type !== "none" && (
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Print:</span>
-                        <span className="font-medium capitalize">
-                          {design.orderDetails.print_type === "black" ? "Black Print" : "Full Color Print"}
-                        </span>
-                      </div>
-                    )}
                     <div className="flex justify-between text-sm pt-2 border-t">
                       <span>Subtotal:</span>
-                      <span className="font-medium">{currencySymbol}{(design.orderDetails?.total_price || 0).toFixed(2)}</span>
+                      <span className="font-medium">{currencySymbol}{(order.totalPrice || 0).toFixed(2)}</span>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* Order total */}
             <div className="mt-6 space-y-3 border-t pt-4">
               <div className="flex justify-between text-sm">
                 <span>Subtotal:</span>
@@ -269,142 +169,63 @@ const Address = () => {
               )}
               <div className="flex justify-between text-lg font-bold border-t pt-2 text-primary">
                 <span>Total:</span>
-                <span>{currencySymbol}{total.toFixed(2)}</span>
+                <span>{currencySymbol}{(subtotal + expressDeliveryFee).toFixed(2)}</span>
               </div>
             </div>
           </Card>
 
-          {/* Delivery Address Form */}
           <Card className="p-6">
             <h2 className="text-xl font-semibold mb-4">Delivery Address</h2>
             <div className="space-y-4">
               <div>
                 <Label htmlFor="name">Full Name *</Label>
-                <Input 
-                  id="name" 
-                  name="name" 
-                  value={shippingAddress.name} 
-                  onChange={handleInputChange} 
-                  className="mt-2"
-                  required
-                />
+                <Input id="name" name="name" value={shippingAddress.name} onChange={handleInputChange} className="mt-2" required />
               </div>
               <div>
                 <Label htmlFor="address">Street Address *</Label>
-                <Input 
-                  id="address" 
-                  name="address" 
-                  value={shippingAddress.address} 
-                  onChange={handleInputChange} 
-                  className="mt-2"
-                  required
-                />
+                <Input id="address" name="address" value={shippingAddress.address} onChange={handleInputChange} className="mt-2" required />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="city">City *</Label>
-                  <Input 
-                    id="city" 
-                    name="city" 
-                    value={shippingAddress.city} 
-                    onChange={handleInputChange} 
-                    className="mt-2"
-                    required
-                  />
+                  <Input id="city" name="city" value={shippingAddress.city} onChange={handleInputChange} className="mt-2" required />
                 </div>
                 <div>
                   <Label htmlFor="state">State/Province</Label>
-                  <Input 
-                    id="state" 
-                    name="state" 
-                    value={shippingAddress.state} 
-                    onChange={handleInputChange} 
-                    className="mt-2"
-                  />
+                  <Input id="state" name="state" value={shippingAddress.state} onChange={handleInputChange} className="mt-2" />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="zipCode">Zip/Postal Code *</Label>
-                  <Input 
-                    id="zipCode" 
-                    name="zipCode" 
-                    value={shippingAddress.zipCode} 
-                    onChange={handleInputChange} 
-                    className="mt-2"
-                    required
-                  />
+                  <Input id="zipCode" name="zipCode" value={shippingAddress.zipCode} onChange={handleInputChange} className="mt-2" required />
                 </div>
                 <div>
                   <Label htmlFor="country">Country *</Label>
-                  <Input 
-                    id="country" 
-                    name="country" 
-                    value={shippingAddress.country} 
-                    onChange={handleInputChange} 
-                    className="mt-2"
-                    required
-                  />
+                  <Input id="country" name="country" value={shippingAddress.country} onChange={handleInputChange} className="mt-2" required />
                 </div>
               </div>
               <div>
                 <Label htmlFor="phone">Phone Number</Label>
-                <Input 
-                  id="phone" 
-                  name="phone" 
-                  value={shippingAddress.phone} 
-                  onChange={handleInputChange} 
-                  className="mt-2"
-                />
+                <Input id="phone" name="phone" value={shippingAddress.phone} onChange={handleInputChange} className="mt-2" />
               </div>
-
               <div>
-                <Label htmlFor="customizationNotes">Extra customization notes (optional)</Label>
+                <Label htmlFor="customizationNotes">Extra notes (optional)</Label>
                 <Textarea
                   id="customizationNotes"
                   value={customizationNotes}
                   onChange={(e) => setCustomizationNotes(e.target.value)}
                   className="mt-2"
                   rows={3}
-                  placeholder="Tell the manufacturer any extra details. Final price still follows the supplier’s pricing table."
+                  placeholder="Any extra details for the manufacturer."
                 />
               </div>
 
-              <div>
-                <Label htmlFor="supplier">Select Supplier *</Label>
-                <select
-                  id="supplier"
-                  value={selectedSupplierId}
-                  onChange={(e) => setSelectedSupplierId(e.target.value)}
-                  className="w-full mt-2 px-3 py-2 border rounded-md bg-card text-foreground"
-                  required
-                >
-                  <option value="">Choose a supplier...</option>
-                  {suppliers.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.companyName}
-                    </option>
-                  ))}
-                </select>
-                {suppliers.length === 0 && (
-                  <p className="text-sm text-muted-foreground mt-1">Loading suppliers...</p>
-                )}
-              </div>
-
-              <Button 
-                onClick={handleSubmit} 
-                className="w-full mt-4" 
-                variant="hero" 
-                disabled={loading || !selectedSupplierId}
-              >
+              <Button onClick={handleSubmit} className="w-full mt-4" variant="hero" disabled={loading}>
                 {loading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processing...
-                  </>
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processing...</>
                 ) : (
-                  <>
-                    <ShoppingCart className="h-4 w-4 mr-2" /> Proceed to Payment
-                  </>
+                  <><ShoppingCart className="h-4 w-4 mr-2" /> Proceed to Payment</>
                 )}
               </Button>
             </div>

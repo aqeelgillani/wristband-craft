@@ -7,7 +7,7 @@ import { Resend } from 'resend';
 
 @Injectable()
 export class AuthService {
-  private resend = new Resend(process.env.RESEND_API_KEY || 're_FB3ZvYvB_LfsyS1mbzs4JAY5Fhr1cGTNv');
+  private resend = new Resend(process.env.RESEND_API_KEY);
 
   constructor(private prisma: PrismaService, private jwtService: JwtService) {}
 
@@ -18,43 +18,33 @@ export class AuthService {
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
     const user = await this.prisma.profile.create({
       data: {
         email: dto.email,
         password: passwordHash,
         fullName: dto.fullName,
-        verificationToken: otp,
-        isVerified: false,
+        isVerified: true,
       },
       include: { roles: true },
     });
 
     await this.prisma.userRole.create({
-      data: {
-        userId: user.id,
-        role,
-      },
+      data: { userId: user.id, role },
     });
 
-    console.log(`[AUTH] New registration. OTP for ${user.email}: ${otp}`);
-
-    try {
-      await this.resend.emails.send({
-        from: 'Wristband Craft <onboarding@resend.dev>',
-        to: dto.email,
-        subject: 'Verify your email code',
-        html: `<p>Your verification code is: <strong>${otp}</strong></p>`,
-      });
-    } catch (e) {
-      console.error('Failed to send verification email:', e);
-    }
+    const token = this.signToken(user.id, user.email, [role]);
 
     return {
       success: true,
-      needsVerification: true,
-      email: user.email,
+      needsVerification: false,
+      accessToken: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        roles: [role],
+      },
     };
   }
 

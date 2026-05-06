@@ -25,6 +25,7 @@ export class DesignsService {
         customText: dto.customText,
         textColor: dto.textColor,
         textPosition: dto.textPosition ? JSON.stringify(dto.textPosition) : undefined,
+        canvasJson: dto.canvasJson ?? undefined,
       },
     });
   }

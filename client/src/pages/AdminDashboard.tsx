@@ -163,8 +163,13 @@ const AdminDashboard = () => {
             </Button>
           )}
           {isSupplier && (
+            <Button variant="outline" size="sm" onClick={() => navigate("/admin/products")}>
+              Manage Products
+            </Button>
+          )}
+          {isSupplier && (
             <Button variant="outline" size="sm" onClick={() => navigate("/admin/pricing")}>
-              Manage pricing
+              Manage Pricing
             </Button>
           )}
         </div>

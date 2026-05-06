@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { OrdersService } from './orders.service';
 import { BulkOrderUpdateDto, CreateOrderDto, UpdateOrderStatusDto, UpdateShipmentDto } from './orders.dto';
@@ -40,6 +40,11 @@ export class OrdersController {
   @Patch(':id/shipment')
   updateShipment(@Param('id') id: string, @Body() dto: UpdateShipmentDto, @Request() req: any) {
     return this.ordersService.updateShipment(id, dto, { id: req.user.id, roles: req.user.roles || [] });
+  }
+
+  @Delete(':id')
+  deleteDraft(@Param('id') id: string, @Request() req: any) {
+    return this.ordersService.deleteDraft(id, req.user.id);
   }
 
   @Get(':id/timeline')

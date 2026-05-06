@@ -22,4 +22,8 @@ export class CreateDesignDto {
 
   @IsOptional()
   textPosition?: any;
+
+  @IsOptional()
+  @IsString()
+  canvasJson?: string;
 }

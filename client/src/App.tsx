@@ -20,6 +20,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import NotFound from "./pages/NotFound";
 import SupplierPricing from "./pages/SupplierPricing";
 import SupplierDesigns from "./pages/SupplierDesigns";
+import SupplierProducts from "./pages/SupplierProducts";
 
 // Removed clearOldSessions() to fix persistent login issue
 
@@ -115,6 +116,14 @@ const App = () => (
             element={
               <ProtectedRoute allowedRoles={['supplier', 'admin']}>
                 <SupplierDesigns />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/products"
+            element={
+              <ProtectedRoute allowedRoles={['supplier']}>
+                <SupplierProducts />
               </ProtectedRoute>
             }
           />

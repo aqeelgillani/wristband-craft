@@ -19,6 +19,13 @@ type Currency = "EUR" | "USD" | "GBP";
 type WristbandType = "silicone" | "fabric" | "vinyl" | "tyvek";
 type PrintType = "none" | "black" | "full_color";
 
+const CANVAS_DIMS: Record<WristbandType, { width: number; height: number }> = {
+  tyvek:    { width: 1200, height: 100 },
+  vinyl:    { width: 1200, height: 100 },
+  fabric:   { width: 1200, height: 150 },
+  silicone: { width: 1200, height: 200 },
+};
+
 const TYVEK_COLORS = [
   { name: "White", value: "#FFFFFF" },
   { name: "Black", value: "#000000" },
@@ -54,6 +61,9 @@ interface SavedTemplate {
   wristbandColor: string;
   wristbandType: string;
   createdAt: string;
+  canvasJson?: string;
+  customText?: string;
+  textColor?: string;
 }
 
 interface PricingConfig {
@@ -73,21 +83,6 @@ interface PricingConfig {
   secureGuestsExtraEur: number;
 }
 
-const DEFAULT_CONFIG: PricingConfig = {
-  wristbandType: "tyvek",
-  minQuantity: 100,
-  basePriceUsd: 0.50,
-  basePriceEur: 0.45,
-  basePriceGbp: 0.40,
-  blackPrintExtraUsd: 0.05,
-  blackPrintExtraEur: 0.04,
-  blackPrintExtraGbp: 0.04,
-  fullColorPrintExtraUsd: 0.15,
-  fullColorPrintExtraEur: 0.14,
-  fullColorPrintExtraGbp: 0.12,
-  secureGuestsExtraUsd: 0.10,
-  secureGuestsExtraEur: 0.09,
-};
 
 const dataUrlToFile = async (dataUrl: string, filename: string): Promise<File> => {
   const response = await fetch(dataUrl);
@@ -155,6 +150,8 @@ const DesignStudio = () => {
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [selectedSupplierId, setSelectedSupplierId] = useState<string>("");
   const [supplierConfigs, setSupplierConfigs] = useState<PricingConfig[]>([]);
+  const [supplierProducts, setSupplierProducts] = useState<any[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
 
   useEffect(() => {
     if (!canvasContainerRef.current || fabricCanvas) return;
@@ -164,45 +161,50 @@ const DesignStudio = () => {
       backgroundColor: wristbandColor,
     });
     
-    // Add left white space for QR (90px wide with rounded appearance)
+    const initDims = CANVAS_DIMS[wristbandType] || CANVAS_DIMS.tyvek;
+    canvas.setWidth(initDims.width);
+    canvas.setHeight(initDims.height);
+
     const qrWhiteSpace = new Rect({
       left: 0,
       top: 0,
       width: 100,
-      height: 100,
+      height: initDims.height,
       fill: '#FFFFFF',
       selectable: false,
       evented: false,
-   
     });
-    
-    // Add right white space for closing end (50px wide)
+    (qrWhiteSpace as any)._isBoundaryLeft = true;
+
     const closingWhiteSpace = new Rect({
-      left: 1150,
+      left: initDims.width - 50,
       top: 0,
       width: 50,
-      height: 100,
+      height: initDims.height,
       fill: '#FFFFFF',
       selectable: false,
       evented: false,
     });
-    
-    // Add diecut lines (in the middle design area)
+    (closingWhiteSpace as any)._isBoundaryRight = true;
+
     const diecutMargin = 100;
-    const topLine = new Line([diecutMargin, 8, 1150, 8], {
+    const topLine = new Line([diecutMargin, 8, initDims.width - 50, 8], {
       stroke: '#666666',
       strokeWidth: 1,
       strokeDashArray: [5, 5],
       selectable: false,
       evented: false,
     });
-    const bottomLine = new Line([diecutMargin, 92, 1150, 92], {
+    (topLine as any)._isDiecutTop = true;
+
+    const bottomLine = new Line([diecutMargin, initDims.height - 8, initDims.width - 50, initDims.height - 8], {
       stroke: '#666666',
       strokeWidth: 1,
       strokeDashArray: [5, 5],
       selectable: false,
       evented: false,
     });
+    (bottomLine as any)._isDiecutBottom = true;
     
     canvas.add(qrWhiteSpace, closingWhiteSpace, topLine, bottomLine);
     canvas.sendObjectToBack(closingWhiteSpace);
@@ -232,15 +234,27 @@ const DesignStudio = () => {
 
   useEffect(() => {
     if (!selectedSupplierId) return;
-    const loadSupplierPricing = async () => {
+    const loadSupplierData = async () => {
       try {
-        const data = await apiFetch(`/suppliers/${selectedSupplierId}/pricing`);
-        setSupplierConfigs(data || []);
+        const [pricingData, productsData] = await Promise.all([
+          apiFetch(`/suppliers/${selectedSupplierId}/pricing`),
+          apiFetch(`/suppliers/${selectedSupplierId}/products`),
+        ]);
+        setSupplierConfigs(pricingData || []);
+        const products = productsData || [];
+        setSupplierProducts(products);
+        if (products.length > 0) {
+          setSelectedProductId(products[0].id);
+          setWristbandType(products[0].wristbandType as WristbandType);
+          setQuantity(products[0].minOrderQuantity || 1000);
+        } else {
+          setSelectedProductId("");
+        }
       } catch (e) {
-        // Fallback or error handled implicitly if array is empty
+        console.error("Failed to load supplier data:", e);
       }
     };
-    loadSupplierPricing();
+    loadSupplierData();
   }, [selectedSupplierId]);
 
   // Load design from edit mode (if navigated from order summary)
@@ -318,14 +332,37 @@ const DesignStudio = () => {
   }, [fabricCanvas, editDesignState]);
 
   useEffect(() => {
-    // Skip if we're loading a template (template will set its own background)
     if (isLoadingTemplateRef.current) return;
-    
     if (fabricCanvas) {
       fabricCanvas.backgroundColor = wristbandColor;
       fabricCanvas.renderAll();
     }
   }, [wristbandColor, fabricCanvas]);
+
+  useEffect(() => {
+    if (!fabricCanvas) return;
+    const dims = CANVAS_DIMS[wristbandType] || CANVAS_DIMS.tyvek;
+    fabricCanvas.setWidth(dims.width);
+    fabricCanvas.setHeight(dims.height);
+
+    // Update the static overlay rectangles and diecut lines
+    fabricCanvas.getObjects().forEach(obj => {
+      if (obj.selectable === false && obj.evented === false) {
+        const anyObj = obj as any;
+        if (anyObj._isBoundaryLeft) {
+          obj.set({ height: dims.height });
+        } else if (anyObj._isBoundaryRight) {
+          obj.set({ left: dims.width - 50, height: dims.height });
+        } else if (anyObj._isDiecutTop) {
+          obj.set({ x2: dims.width - 50 });
+        } else if (anyObj._isDiecutBottom) {
+          obj.set({ y1: dims.height - 8, y2: dims.height - 8, x2: dims.width - 50 });
+        }
+      }
+    });
+
+    fabricCanvas.renderAll();
+  }, [wristbandType, fabricCanvas]);
 
   const loadTemplates = async () => {
     try {
@@ -341,73 +378,69 @@ const DesignStudio = () => {
 
   useEffect(() => {
     const fetchPricing = async () => {
-      if (quantity < 1000) return;
       if (!selectedSupplierId) return;
-      
+
       setLoadingPrice(true);
       try {
-        // Find config for this writstbandType
-        const defaultConfig = DEFAULT_CONFIG; // Import or define DEFAULT_CONFIG above if not present
-        const config = supplierConfigs.find(c => c.wristbandType === wristbandType) || undefined;
-        
-        // Base price
-        let basePrice = 0.039;
-        if (config) {
-          if (currency === "USD") basePrice = config.basePriceUsd;
-          else if (currency === "GBP") basePrice = config.basePriceGbp;
-          else basePrice = config.basePriceEur;
+        const config = supplierConfigs.find(c => c.wristbandType === wristbandType);
+
+        if (!config) {
+          setPricing(null);
+          return;
         }
 
-        const extraCharges: any = {};
-        
-        let printExtra = 0;
-        let qrExtra = 0;
-        let trademarkExtra = 0;
+        const minQty = config.minQuantity;
+        const safeQty = Math.max(quantity, minQty);
 
-        if (config) {
-            if (currency === "USD") {
-              printExtra = config.fullColorPrintExtraUsd;
-              qrExtra = config.secureGuestsExtraUsd;
-              trademarkExtra = config.blackPrintExtraUsd; // Using this arbitrarily for trademark text
-            } else if (currency === "GBP") {
-              printExtra = config.fullColorPrintExtraGbp;
-              qrExtra = config.secureGuestsExtraEur;
-              trademarkExtra = config.blackPrintExtraGbp;
-            } else {
-              printExtra = config.fullColorPrintExtraEur;
-              qrExtra = config.secureGuestsExtraEur;
-              trademarkExtra = config.blackPrintExtraEur;
-            }
+        // Check if the selected product has quantity-based pricing tiers
+        const product = supplierProducts.find(p => p.id === selectedProductId);
+        const tiers: any[] = product?.pricingTiers || [];
+        const matchingTier = tiers.find(
+          (t: any) => safeQty >= t.minQuantity && (t.maxQuantity == null || safeQty <= t.maxQuantity)
+        );
+
+        let basePrice: number;
+        if (matchingTier) {
+          basePrice = currency === "USD"
+            ? matchingTier.pricePerUnitUsd
+            : currency === "GBP"
+            ? (matchingTier.pricePerUnitGbp ?? matchingTier.pricePerUnitUsd)
+            : (matchingTier.pricePerUnitEur ?? matchingTier.pricePerUnitUsd);
         } else {
-            // Default arbitrary values if config missing
-            printExtra = 0.039;
-            qrExtra = 0.015;
-            trademarkExtra = 0.015;
+          basePrice = currency === "USD"
+            ? config.basePriceUsd
+            : currency === "GBP"
+            ? config.basePriceGbp
+            : config.basePriceEur;
         }
 
-        // Add optional extras (these are computed Per Unit based on config design)
-        if (hasTrademark) {
-          extraCharges.trademark = trademarkExtra * quantity;
-        }
-        if (hasPrint) {
-          extraCharges.print = printExtra * quantity;
-        }
-        if (hasQrCode) {
-          extraCharges.qrCode = qrExtra * quantity;
+        let printExtra: number;
+        let qrExtra: number;
+        let trademarkExtra: number;
+
+        if (currency === "USD") {
+          printExtra = config.fullColorPrintExtraUsd;
+          qrExtra = config.secureGuestsExtraUsd;
+          trademarkExtra = config.blackPrintExtraUsd;
+        } else if (currency === "GBP") {
+          printExtra = config.fullColorPrintExtraGbp;
+          qrExtra = config.secureGuestsExtraEur;
+          trademarkExtra = config.blackPrintExtraGbp;
+        } else {
+          printExtra = config.fullColorPrintExtraEur;
+          qrExtra = config.secureGuestsExtraEur;
+          trademarkExtra = config.blackPrintExtraEur;
         }
 
-        // Compute per-unit price (only base)
-        const unitPrice = basePrice;
+        const extraCharges: { print?: number; trademark?: number; qrCode?: number } = {};
+        if (hasTrademark) extraCharges.trademark = trademarkExtra * safeQty;
+        if (hasPrint) extraCharges.print = printExtra * safeQty;
+        if (hasQrCode) extraCharges.qrCode = qrExtra * safeQty;
+
         const totalExtras = (extraCharges.trademark || 0) + (extraCharges.print || 0) + (extraCharges.qrCode || 0);
-        const totalPrice = (unitPrice * quantity) + totalExtras;
+        const totalPrice = basePrice * safeQty + totalExtras;
 
-        setPricing({
-          basePrice,
-          extraCharges,
-          unitPrice,
-          totalPrice,
-          minQuantity: config?.minQuantity || 1000,
-        });
+        setPricing({ basePrice, extraCharges, unitPrice: basePrice, totalPrice, minQuantity: minQty });
       } catch (error: any) {
         toast.error(error.message || "Failed to calculate pricing");
       } finally {
@@ -415,7 +448,7 @@ const DesignStudio = () => {
       }
     };
     fetchPricing();
-  }, [wristbandType, quantity, printType, hasTrademark, hasPrint, hasQrCode, selectedSupplierId, supplierConfigs, currency]);
+  }, [wristbandType, quantity, printType, hasTrademark, hasPrint, hasQrCode, selectedSupplierId, selectedProductId, supplierProducts, supplierConfigs, currency]);
 
 
   // Update trademark text on canvas (vertical and rotatable)
@@ -657,49 +690,11 @@ const DesignStudio = () => {
           wristbandType,
           customText: trademarkText || "",
           textColor: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
+          canvasJson: fabricCanvas ? JSON.stringify(fabricCanvas.toJSON()) : undefined,
         }),
       });
 
       toast.success("Template saved successfully");
-      // Save to localStorage cart (designs created in this browser)
-      try {
-        const cartRaw = localStorage.getItem("cart_designs");
-        const cart = cartRaw ? JSON.parse(cartRaw) : [];
-        const cartItem = {
-          designUrl: publicUrl,
-          orderDetails: {
-            quantity,
-            total_price: pricing?.totalPrice || 0,
-            unit_price: pricing?.unitPrice || 0,
-            currency,
-            wristband_type: wristbandType,
-            wristband_color: wristbandColor,
-            print_type: printType,
-            has_trademark: hasTrademark,
-            trademark_text: trademarkText,
-            trademark_text_color: trademarkTextColor,
-            has_qr_code: hasQrCode,
-            has_print: hasPrint,
-          },
-          // Persist canvas JSON so the template can be reloaded/edited in-browser
-          canvasJson: jsonPayload.canvas,
-          created_at: new Date().toISOString(),
-        };
-        
-        // If we're editing an existing design, update it; otherwise add new
-        if (editIndex !== undefined && editIndex >= 0 && editIndex < cart.length) {
-          cart[editIndex] = cartItem;
-          toast.success("Design updated in cart!");
-        } else {
-          cart.push(cartItem);
-          toast.success("Design added to cart!");
-        }
-        
-        localStorage.setItem("cart_designs", JSON.stringify(cart));
-        await loadTemplates();
-      } catch (e) {
-        console.error("Failed to save design to localStorage", e);
-      }
       loadTemplates();
     } catch (error: any) {
       console.error("Save template error:", error);
@@ -780,7 +775,7 @@ const DesignStudio = () => {
         }),
       });
 
-      const order = await apiFetch("/orders", {
+      await apiFetch("/orders", {
         method: "POST",
         body: JSON.stringify({
           designId: design.id,
@@ -791,58 +786,22 @@ const DesignStudio = () => {
           currency,
           printType,
           extraCharges: pricing.extraCharges,
-          status: "PLACED",
-          supplierId: selectedSupplierId,
-          adminNotes: `Trademark: ${hasTrademark ? trademarkText : "No"}, QR Code: ${hasQrCode ? "Yes" : "No"}`,
+          status: "DRAFT",
+          paymentStatus: "pending",
+          supplierId: selectedSupplierId || undefined,
+          productId: selectedProductId || undefined,
+          customizationNotes: JSON.stringify({
+            wristband_color: wristbandColor,
+            has_trademark: hasTrademark,
+            trademark_text: trademarkText,
+            trademark_text_color: trademarkTextColor,
+            has_qr_code: hasQrCode,
+            has_print: hasPrint,
+          }),
         }),
       });
 
-      // Add this placed order to localStorage cart_designs so it appears in "Your Order" list
-      try {
-        const cartRaw = localStorage.getItem("cart_designs");
-        const cart = cartRaw ? JSON.parse(cartRaw) : [];
-        const cartItem = {
-          designUrl: publicUrl,
-          orderId: order.id,
-          orderDetails: {
-            quantity,
-            total_price: pricing.totalPrice,
-            unit_price: pricing.unitPrice,
-            currency,
-            wristband_type: wristbandType,
-            print_type: printType,
-            has_trademark: hasTrademark,
-            trademark_text: trademarkText,
-            has_qr_code: hasQrCode,
-          },
-          canvasJson: fabricCanvas.toJSON(),
-          created_at: new Date().toISOString(),
-        };
-        cart.push(cartItem);
-        localStorage.setItem("cart_designs", JSON.stringify(cart));
-      } catch (e) {
-        console.error("Failed to append placed order to localStorage", e);
-      }
-
-      // Navigate to order summary page
-      navigate("/order-summary", {
-        state: {
-          orderId: order.id,
-          designUrl: publicUrl,
-          orderDetails: {
-            quantity,
-            total_price: pricing.totalPrice,
-            unit_price: pricing.unitPrice,
-            currency,
-            wristband_type: wristbandType,
-            print_type: printType,
-            has_trademark: hasTrademark,
-            trademark_text: trademarkText,
-            has_qr_code: hasQrCode,
-            supplierId: selectedSupplierId,
-          },
-        },
-      });
+      navigate("/order-summary");
       toast.success("Proceeding to order summary...");
     } catch (error: any) {
       toast.error(error.message || "An error occurred");
@@ -979,77 +938,36 @@ const DesignStudio = () => {
                           }
                           setUploadedImage(null);
                           
-                          // Restore from localStorage (has complete design data)
-                          const cartRaw = localStorage.getItem("cart_designs");
+                          // Restore from design's saved canvasJson (stored in DB)
                           let restored = false;
-                          
-                           if (cartRaw) {
-                            const cart = JSON.parse(cartRaw);
-                            const match = cart.find((c: any) => c.designUrl === template.designUrl);
-                            
-                            if (match && match.canvasJson && match.orderDetails) {
-                              const od = match.orderDetails;
-                              
-                              // Restore ALL settings
-                              setWristbandColor(od.wristband_color || template.wristbandColor);
-                              setWristbandType((od.wristband_type || template.wristbandType) as WristbandType);
-                              setQuantity(od.quantity || 1000);
-                              setPrintType(od.print_type || "none");
-                              setHasPrint(od.has_print !== undefined ? od.has_print : (od.print_type !== "none"));
-                              setHasTrademark(od.has_trademark || false);
-                              setTrademarkText(od.trademark_text || "");
-                              setHasQrCode(od.has_qr_code || false);
-                              
-                              // Set trademark text color - ensure it's set before canvas loads
-                              if (od.trademark_text_color) {
-                                setTrademarkTextColor(od.trademark_text_color === "white" ? "white" : "black");
-                              } else if (od.trademark_text) {
-                                const textColor = (template as any).textColor || od.text_color;
-                                setTrademarkTextColor(textColor?.toLowerCase() === "#ffffff" ? "white" : "black");
-                              } else {
-                                setTrademarkTextColor("black");
-                              }
-                              
-                              // Update background color
-                              fabricCanvas.backgroundColor = od.wristband_color || template.wristbandColor;
-                              
-                              // Load canvas JSON with all objects (logos, text, etc.)
-                              await new Promise<void>((resolve) => {
-                                fabricCanvas.loadFromJSON(match.canvasJson, () => {
-                                  // After loading, make sure ALL objects are properly configured
-                                  fabricCanvas.getObjects().forEach(obj => {
-                                    if (obj.type === 'i-text' || obj.type === 'text') {
-                                      obj.set({
-                                        editable: true,
-                                        selectable: true,
-                                        evented: true,
-                                      });
-                                    } else if (obj.type === 'image') {
-                                      // Make sure images are selectable (except QR and structural elements)
-                                      if ((obj as any).selectable !== false) {
-                                        obj.set({
-                                          selectable: true,
-                                          evented: true,
-                                        });
-                                      }
-                                    }
-                                  });
-                                  
-                                  fabricCanvas.renderAll();
-                                  
-                                  // Find and set uploaded image reference
-                                  const imgObj = fabricCanvas.getObjects().find(o => 
-                                    o.type === 'image' && (o as any).selectable !== false
-                                  ) as FabricImage | undefined;
-                                  if (imgObj) setUploadedImage(imgObj as any);
-                                  
-                                  resolve();
+
+                          if (template.canvasJson) {
+                            setWristbandColor(template.wristbandColor || "#FFFFFF");
+                            setWristbandType((template.wristbandType || "tyvek") as WristbandType);
+                            setTrademarkText(template.customText || "");
+                            setTrademarkTextColor(template.textColor?.toLowerCase() === "#ffffff" ? "white" : "black");
+                            fabricCanvas.backgroundColor = template.wristbandColor || "#FFFFFF";
+
+                            await new Promise<void>((resolve) => {
+                              fabricCanvas.loadFromJSON(JSON.parse(template.canvasJson!), () => {
+                                fabricCanvas.getObjects().forEach(obj => {
+                                  if (obj.type === 'i-text' || obj.type === 'text') {
+                                    obj.set({ editable: true, selectable: true, evented: true });
+                                  } else if (obj.type === 'image' && (obj as any).selectable !== false) {
+                                    obj.set({ selectable: true, evented: true });
+                                  }
                                 });
+                                fabricCanvas.renderAll();
+                                const imgObj = fabricCanvas.getObjects().find(o =>
+                                  o.type === 'image' && (o as any).selectable !== false
+                                ) as FabricImage | undefined;
+                                if (imgObj) setUploadedImage(imgObj as any);
+                                resolve();
                               });
-                              
-                              restored = true;
-                              toast.success("Template loaded with all elements!");
-                            }
+                            });
+
+                            restored = true;
+                            toast.success("Template loaded!");
                           }
                           
                           // Fallback: try to restore from JSON snapshot stored next to the image
@@ -1164,14 +1082,60 @@ const DesignStudio = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1 text-primary/80">
+                <p className="text-xs text-muted-foreground mt-1">
                   You design here; the supplier sets prices (in their dashboard). Your totals update from their price book when you
                   change options.
                 </p>
               </div>
+              {supplierProducts.length > 0 && (
+                <div>
+                  <Label>Select Product</Label>
+                  <Select
+                    value={selectedProductId}
+                    onValueChange={(id) => {
+                      setSelectedProductId(id);
+                      const p = supplierProducts.find(p => p.id === id);
+                      if (p) {
+                        setWristbandType(p.wristbandType as WristbandType);
+                        setQuantity(p.minOrderQuantity || 1000);
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="mt-2"><SelectValue placeholder="Choose a product" /></SelectTrigger>
+                    <SelectContent>
+                      {supplierProducts.map((p: any) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name} ({p.wristbandType})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <div className="border-t pt-4">
-                <Label>Quantity (Min {pricing?.minQuantity || 1000} pcs)</Label>
-                <Input type="number" min={pricing?.minQuantity || 1000} step="100" value={quantity} onChange={(e) => setQuantity(Math.max(pricing?.minQuantity || 1000, parseInt(e.target.value) || (pricing?.minQuantity || 1000)))} className="mt-2" />
+                {(() => {
+                  const product = supplierProducts.find(p => p.id === selectedProductId);
+                  const minQty = product?.minOrderQuantity || pricing?.minQuantity || 1;
+                  const maxQty = product?.maxOrderQuantity;
+                  return (
+                    <>
+                      <Label>Quantity (Min {minQty} pcs{maxQty ? `, Max ${maxQty} pcs` : ""})</Label>
+                      <Input
+                        type="number"
+                        min={minQty}
+                        max={maxQty || undefined}
+                        step="100"
+                        value={quantity}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || minQty;
+                          setQuantity(maxQty ? Math.min(Math.max(val, minQty), maxQty) : Math.max(val, minQty));
+                        }}
+                        className="mt-2"
+                      />
+                    </>
+                  );
+                })()}
                 <Button
                   variant="default"
                   size="sm"
@@ -1243,7 +1207,14 @@ const DesignStudio = () => {
                 <div className="space-y-2">
                   <div className="flex items-center space-x-2">
                     <Checkbox id="trademark" checked={hasTrademark} onCheckedChange={(c) => setHasTrademark(c as boolean)} />
-                    <Label htmlFor="trademark" className="cursor-pointer">Add Trademark Text (15€ per 1000 bands)</Label>
+                    <Label htmlFor="trademark" className="cursor-pointer">
+                      Add Trademark Text
+                      {pricing && supplierConfigs.find(c => c.wristbandType === wristbandType) && (
+                        <span className="text-muted-foreground ml-1 text-xs">
+                          (+{currency === "USD" ? "$" : currency === "GBP" ? "£" : "€"}{(supplierConfigs.find(c => c.wristbandType === wristbandType)!.blackPrintExtraEur * 1000).toFixed(2)} / 1000 pcs)
+                        </span>
+                      )}
+                    </Label>
                   </div>
                   {hasTrademark && (
                     <div className="ml-6 space-y-2">
@@ -1272,7 +1243,14 @@ const DesignStudio = () => {
                 </div>
                 <div className="flex items-center space-x-2">
                   <Checkbox id="qr-code" checked={hasQrCode} onCheckedChange={(c) => setHasQrCode(c as boolean)} />
-                  <Label htmlFor="qr-code" className="cursor-pointer">Add QR Code - Emergency (15€ per 1000 bands)</Label>
+                  <Label htmlFor="qr-code" className="cursor-pointer">
+                    Add QR Code - Emergency
+                    {pricing && supplierConfigs.find(c => c.wristbandType === wristbandType) && (
+                      <span className="text-muted-foreground ml-1 text-xs">
+                        (+{currency === "USD" ? "$" : currency === "GBP" ? "£" : "€"}{(supplierConfigs.find(c => c.wristbandType === wristbandType)!.secureGuestsExtraEur * 1000).toFixed(2)} / 1000 pcs)
+                      </span>
+                    )}
+                  </Label>
                 </div>
               </div>
               <div>
@@ -1313,8 +1291,8 @@ const DesignStudio = () => {
   ) : pricing ? (
     <>
       <div className="flex justify-between text-sm">
-        <span>Base Price (with/without print):</span>
-        <span>{currencySymbol}39.00 / 1000 pcs</span>
+        <span>Base Price (per unit):</span>
+        <span>{currencySymbol}{(pricing.basePrice || 0).toFixed(3)}</span>
       </div>
 
       {pricing.extraCharges.trademark && (
@@ -1356,7 +1334,9 @@ const DesignStudio = () => {
     </>
   ) : (
     <p className="text-sm text-muted-foreground text-center py-4">
-      Enter quantity to see pricing
+      {selectedSupplierId
+        ? "This supplier has no pricing configured for the selected wristband type."
+        : "Select a supplier to see pricing."}
     </p>
   )}
 </div>
@@ -1401,12 +1381,13 @@ const DesignStudio = () => {
                           has_qr_code: hasQrCode,
                           has_print: hasPrint,
                           supplierId: selectedSupplierId,
+                          productId: selectedProductId || null,
                         },
                         saved_at: new Date().toISOString(),
                       };
                       
-                      // Save to database
-                      await apiFetch("/designs", {
+                      // Save to database and capture the design ID
+                      const savedDesign = await apiFetch("/designs", {
                         method: "POST",
                         body: JSON.stringify({
                           designUrl: publicUrl,
@@ -1416,25 +1397,37 @@ const DesignStudio = () => {
                           textColor: trademarkTextColor === "white" ? "#FFFFFF" : "#000000",
                         }),
                       });
+                      const savedDesignId: string = savedDesign?.id;
 
-                      // Add to localStorage cart
-                      const cartRaw = localStorage.getItem("cart_designs");
-                      const cart = cartRaw ? JSON.parse(cartRaw) : [];
-                      const cartItem = {
-                        designUrl: publicUrl,
-                        orderDetails: jsonPayload.orderDetails,
-                        canvasJson: jsonPayload.canvas,
-                        created_at: new Date().toISOString(),
-                      };
-                      cart.push(cartItem);
-                      localStorage.setItem("cart_designs", JSON.stringify(cart));
-                      
+                      // Save as a DRAFT order in the database
+                      const od = jsonPayload.orderDetails;
+                      await apiFetch("/orders", {
+                        method: "POST",
+                        body: JSON.stringify({
+                          designId: savedDesignId,
+                          supplierId: od.supplierId || undefined,
+                          productId: od.productId || undefined,
+                          quantity: od.quantity,
+                          totalPrice: od.total_price,
+                          unitPrice: od.unit_price,
+                          currency: od.currency,
+                          wristbandType: od.wristband_type,
+                          printType: od.print_type,
+                          status: "DRAFT",
+                          paymentStatus: "pending",
+                          customizationNotes: JSON.stringify({
+                            wristband_color: od.wristband_color,
+                            has_trademark: od.has_trademark,
+                            trademark_text: od.trademark_text,
+                            trademark_text_color: od.trademark_text_color,
+                            has_qr_code: od.has_qr_code,
+                            has_print: od.has_print,
+                          }),
+                        }),
+                      });
+
                       toast.success("Design added to cart! You can close this tab.");
-                      
-                      // Optionally close the tab after adding to cart
-                      setTimeout(() => {
-                        window.close();
-                      }, 2000);
+                      setTimeout(() => { window.close(); }, 2000);
                     } catch (error: any) {
                       console.error("Failed to add to cart:", error);
                       toast.error("Failed to add design to cart");

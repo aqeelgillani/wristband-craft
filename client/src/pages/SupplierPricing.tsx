@@ -25,20 +25,20 @@ interface PricingConfig {
   secureGuestsExtraEur: number;
 }
 
-const DEFAULT_CONFIG: PricingConfig = {
+const EMPTY_CONFIG: PricingConfig = {
   wristbandType: "tyvek",
-  minQuantity: 100,
-  basePriceUsd: 0.50,
-  basePriceEur: 0.45,
-  basePriceGbp: 0.40,
-  blackPrintExtraUsd: 0.05,
-  blackPrintExtraEur: 0.04,
-  blackPrintExtraGbp: 0.04,
-  fullColorPrintExtraUsd: 0.15,
-  fullColorPrintExtraEur: 0.14,
-  fullColorPrintExtraGbp: 0.12,
-  secureGuestsExtraUsd: 0.10,
-  secureGuestsExtraEur: 0.09,
+  minQuantity: 0,
+  basePriceUsd: 0,
+  basePriceEur: 0,
+  basePriceGbp: 0,
+  blackPrintExtraUsd: 0,
+  blackPrintExtraEur: 0,
+  blackPrintExtraGbp: 0,
+  fullColorPrintExtraUsd: 0,
+  fullColorPrintExtraEur: 0,
+  fullColorPrintExtraGbp: 0,
+  secureGuestsExtraUsd: 0,
+  secureGuestsExtraEur: 0,
 };
 
 const SupplierPricing = () => {
@@ -46,7 +46,7 @@ const SupplierPricing = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [configs, setConfigs] = useState<PricingConfig[]>([]);
-  const [activeConfig, setActiveConfig] = useState<PricingConfig>(DEFAULT_CONFIG);
+  const [activeConfig, setActiveConfig] = useState<PricingConfig>(EMPTY_CONFIG);
 
   useEffect(() => {
     fetchPricing();
@@ -60,8 +60,8 @@ const SupplierPricing = () => {
         setConfigs(data);
         setActiveConfig(data[0]);
       } else {
-        setConfigs([DEFAULT_CONFIG]);
-        setActiveConfig(DEFAULT_CONFIG);
+        setConfigs([EMPTY_CONFIG]);
+        setActiveConfig(EMPTY_CONFIG);
       }
     } catch (error) {
       toast.error("Failed to load pricing data");
