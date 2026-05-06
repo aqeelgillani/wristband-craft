@@ -742,12 +742,13 @@ const DesignStudio = () => {
       toast.error("Select a supplier first — prices and fulfillment come from the supplier you choose");
       return;
     }
-    if (quantity < 1000) {
-      toast.error("Minimum quantity is 1000 pieces");
-      return;
-    }
     if (!pricing) {
       toast.error("Please wait for pricing to load");
+      return;
+    }
+    const minQty = pricing.minQuantity || 1000;
+    if (quantity < minQty) {
+      toast.error(`Minimum quantity is ${minQty} pieces`);
       return;
     }
     if (!Number.isFinite(pricing.totalPrice) || !Number.isFinite(quantity)) {

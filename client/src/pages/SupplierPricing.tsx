@@ -5,7 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { ArrowLeft, Save } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ArrowLeft, Save, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface PricingConfig {
@@ -58,7 +65,7 @@ const SupplierPricing = () => {
       const data = await apiFetch("/suppliers/me/pricing");
       if (data && data.length > 0) {
         setConfigs(data);
-        setActiveConfig(data[0]);
+        setActiveTabIndex(0);
       } else {
         setConfigs([EMPTY_CONFIG]);
         setActiveConfig(EMPTY_CONFIG);
@@ -70,21 +77,49 @@ const SupplierPricing = () => {
     }
   };
 
-  const handleInputChange = (field: keyof PricingConfig, value: string | number) => {
-    const parsedValue = typeof value === 'string' ? parseFloat(value) || 0 : value;
-    setActiveConfig((prev) => ({
-      ...prev,
-      [field]: field === 'wristbandType' ? value : parsedValue,
-    }));
+  const handleInputChange = (index: number, field: keyof PricingConfig, value: string | number) => {
+    const newConfigs = [...configs];
+    const parsedValue = typeof value === 'string' && field !== 'wristbandType' ? parseFloat(value) || 0 : value;
+    newConfigs[index] = { ...newConfigs[index], [field]: parsedValue };
+    setConfigs(newConfigs);
+  };
+
+  const handleAddNewType = () => {
+    const newConfig: PricingConfig = {
+      ...DEFAULT_CONFIG,
+      wristbandType: WRISTBAND_TYPES.find(t => !configs.some(c => c.wristbandType === t)) || "tyvek",
+    };
+    setConfigs([...configs, newConfig]);
+    setActiveTabIndex(configs.length);
+  };
+
+  const handleDeleteType = (index: number) => {
+    if (configs[index].id) {
+      toast.error("Cannot delete saved types. Please contact support to remove pricing tiers.");
+      return;
+    }
+    const newConfigs = configs.filter((_, i) => i !== index);
+    setConfigs(newConfigs);
+    setActiveTabIndex(Math.max(0, activeTabIndex - 1));
   };
 
   const handleSave = async () => {
+    if (configs.length === 0) {
+      toast.error("Please add at least one wristband type");
+      return;
+    }
+
     try {
       setSaving(true);
-      await apiFetch("/suppliers/me/pricing", {
-        method: "POST",
-        body: JSON.stringify(activeConfig),
-      });
+      
+      // Save each configuration
+      for (const config of configs) {
+        await apiFetch("/suppliers/me/pricing", {
+          method: "POST",
+          body: JSON.stringify(config),
+        });
+      }
+      
       toast.success("Pricing configuration saved successfully");
       fetchPricing();
     } catch (error: any) {
@@ -103,9 +138,14 @@ const SupplierPricing = () => {
     );
   }
 
+  const activeConfig = activeTabIndex >= 0 ? configs[activeTabIndex] : null;
+  const availableTypes = WRISTBAND_TYPES.filter(
+    t => t === activeConfig?.wristbandType || !configs.some(c => c.wristbandType === t)
+  );
+
   return (
     <div className="min-h-screen bg-gradient-subtle p-4">
-      <header className="max-w-4xl mx-auto border-b bg-card/50 backdrop-blur-sm p-4 flex items-center gap-4 rounded-t-xl mb-4">
+      <header className="max-w-6xl mx-auto border-b bg-card/50 backdrop-blur-sm p-4 flex items-center gap-4 rounded-t-xl mb-4">
         <Button variant="ghost" size="sm" onClick={() => navigate("/admin")}>
           <ArrowLeft className="h-4 w-4 mr-2" />
           Back to Dashboard
@@ -115,88 +155,152 @@ const SupplierPricing = () => {
         </h1>
       </header>
 
-      <main className="max-w-4xl mx-auto space-y-6">
+      <main className="max-w-6xl mx-auto space-y-6">
         <Card className="shadow-lg">
           <CardHeader>
-            <CardTitle>Pricing Configuration</CardTitle>
+            <CardTitle>Wristband Types & Pricing</CardTitle>
             <CardDescription>
-              Set the base and additional charges for your products.
+              Add different wristband types and set pricing for each one. Customers will see these when placing orders.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                <Label>Type</Label>
-                <Input value={activeConfig.wristbandType} onChange={(e) => handleInputChange('wristbandType', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>Min Qty</Label>
-                <Input type="number" value={activeConfig.minQuantity} onChange={(e) => handleInputChange('minQuantity', e.target.value)} />
-              </div>
+            {/* Tabs for different wristband types */}
+            <div className="flex flex-wrap gap-2 border-b pb-4">
+              {configs.map((config, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setActiveTabIndex(idx)}
+                  className={`px-4 py-2 rounded-t-lg capitalize transition-colors ${
+                    activeTabIndex === idx
+                      ? "bg-primary text-primary-foreground font-semibold"
+                      : "bg-muted hover:bg-muted/80"
+                  }`}
+                >
+                  {config.wristbandType}
+                </button>
+              ))}
+              <button
+                onClick={handleAddNewType}
+                disabled={configs.length >= WRISTBAND_TYPES.length}
+                className="px-4 py-2 rounded-lg bg-secondary hover:bg-secondary/80 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                Add Type
+              </button>
             </div>
 
-            <h3 className="font-semibold text-lg border-b pb-2 pt-4">Base Prices</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>USD ($)</Label>
-                <Input type="number" step="0.01" value={activeConfig.basePriceUsd} onChange={(e) => handleInputChange('basePriceUsd', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>EUR (€)</Label>
-                <Input type="number" step="0.01" value={activeConfig.basePriceEur} onChange={(e) => handleInputChange('basePriceEur', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>GBP (£)</Label>
-                <Input type="number" step="0.01" value={activeConfig.basePriceGbp} onChange={(e) => handleInputChange('basePriceGbp', e.target.value)} />
-              </div>
-            </div>
+            {/* Configuration form for active tab */}
+            {activeConfig && activeTabIndex >= 0 ? (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="space-y-2">
+                    <Label>Wristband Type</Label>
+                    <Select value={activeConfig.wristbandType} onValueChange={(value) => handleInputChange(activeTabIndex, 'wristbandType', value)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {availableTypes.map((type) => (
+                          <SelectItem key={type} value={type}>
+                            <span className="capitalize">{type}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Min Quantity</Label>
+                    <Input 
+                      type="number" 
+                      value={activeConfig.minQuantity} 
+                      onChange={(e) => handleInputChange(activeTabIndex, 'minQuantity', e.target.value)} 
+                      min="1"
+                    />
+                  </div>
+                </div>
 
-            <h3 className="font-semibold text-lg border-b pb-2 pt-4">Black Print Extra</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>USD</Label>
-                <Input type="number" step="0.01" value={activeConfig.blackPrintExtraUsd} onChange={(e) => handleInputChange('blackPrintExtraUsd', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>EUR</Label>
-                <Input type="number" step="0.01" value={activeConfig.blackPrintExtraEur} onChange={(e) => handleInputChange('blackPrintExtraEur', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>GBP</Label>
-                <Input type="number" step="0.01" value={activeConfig.blackPrintExtraGbp} onChange={(e) => handleInputChange('blackPrintExtraGbp', e.target.value)} />
-              </div>
-            </div>
+                <h3 className="font-semibold text-lg border-b pb-2 pt-4">Base Prices</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>USD ($)</Label>
+                    <Input type="number" step="0.01" value={activeConfig.basePriceUsd} onChange={(e) => handleInputChange(activeTabIndex, 'basePriceUsd', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>EUR (€)</Label>
+                    <Input type="number" step="0.01" value={activeConfig.basePriceEur} onChange={(e) => handleInputChange(activeTabIndex, 'basePriceEur', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>GBP (£)</Label>
+                    <Input type="number" step="0.01" value={activeConfig.basePriceGbp} onChange={(e) => handleInputChange(activeTabIndex, 'basePriceGbp', e.target.value)} />
+                  </div>
+                </div>
 
-            <h3 className="font-semibold text-lg border-b pb-2 pt-4">Full Color Print Extra</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>USD</Label>
-                <Input type="number" step="0.01" value={activeConfig.fullColorPrintExtraUsd} onChange={(e) => handleInputChange('fullColorPrintExtraUsd', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>EUR</Label>
-                <Input type="number" step="0.01" value={activeConfig.fullColorPrintExtraEur} onChange={(e) => handleInputChange('fullColorPrintExtraEur', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>GBP</Label>
-                <Input type="number" step="0.01" value={activeConfig.fullColorPrintExtraGbp} onChange={(e) => handleInputChange('fullColorPrintExtraGbp', e.target.value)} />
-              </div>
-            </div>
+                <h3 className="font-semibold text-lg border-b pb-2 pt-4">Black Print Extra</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>USD</Label>
+                    <Input type="number" step="0.01" value={activeConfig.blackPrintExtraUsd} onChange={(e) => handleInputChange(activeTabIndex, 'blackPrintExtraUsd', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>EUR</Label>
+                    <Input type="number" step="0.01" value={activeConfig.blackPrintExtraEur} onChange={(e) => handleInputChange(activeTabIndex, 'blackPrintExtraEur', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>GBP</Label>
+                    <Input type="number" step="0.01" value={activeConfig.blackPrintExtraGbp} onChange={(e) => handleInputChange(activeTabIndex, 'blackPrintExtraGbp', e.target.value)} />
+                  </div>
+                </div>
 
-            <h3 className="font-semibold text-lg border-b pb-2 pt-4">Secure Guests Extra</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>USD</Label>
-                <Input type="number" step="0.01" value={activeConfig.secureGuestsExtraUsd} onChange={(e) => handleInputChange('secureGuestsExtraUsd', e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <Label>EUR</Label>
-                <Input type="number" step="0.01" value={activeConfig.secureGuestsExtraEur} onChange={(e) => handleInputChange('secureGuestsExtraEur', e.target.value)} />
-              </div>
-            </div>
+                <h3 className="font-semibold text-lg border-b pb-2 pt-4">Full Color Print Extra</h3>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>USD</Label>
+                    <Input type="number" step="0.01" value={activeConfig.fullColorPrintExtraUsd} onChange={(e) => handleInputChange(activeTabIndex, 'fullColorPrintExtraUsd', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>EUR</Label>
+                    <Input type="number" step="0.01" value={activeConfig.fullColorPrintExtraEur} onChange={(e) => handleInputChange(activeTabIndex, 'fullColorPrintExtraEur', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>GBP</Label>
+                    <Input type="number" step="0.01" value={activeConfig.fullColorPrintExtraGbp} onChange={(e) => handleInputChange(activeTabIndex, 'fullColorPrintExtraGbp', e.target.value)} />
+                  </div>
+                </div>
 
-            <div className="pt-6 flex justify-end">
-              <Button onClick={handleSave} disabled={saving} className="px-8 flex gap-2">
+                <h3 className="font-semibold text-lg border-b pb-2 pt-4">Secure Guests Extra (QR)</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>USD</Label>
+                    <Input type="number" step="0.01" value={activeConfig.secureGuestsExtraUsd} onChange={(e) => handleInputChange(activeTabIndex, 'secureGuestsExtraUsd', e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>EUR</Label>
+                    <Input type="number" step="0.01" value={activeConfig.secureGuestsExtraEur} onChange={(e) => handleInputChange(activeTabIndex, 'secureGuestsExtraEur', e.target.value)} />
+                  </div>
+                </div>
+
+                {!activeConfig.id && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeleteType(activeTabIndex)}
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Remove This Type
+                  </Button>
+                )}
+              </div>
+            ) : configs.length === 0 ? (
+              <div className="text-center py-12">
+                <p className="text-muted-foreground mb-4">No pricing configurations yet.</p>
+                <Button onClick={handleAddNewType}>Add First Wristband Type</Button>
+              </div>
+            ) : null}
+
+            <div className="pt-6 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => fetchPricing()}>Cancel</Button>
+              <Button onClick={handleSave} disabled={saving || configs.length === 0} className="px-8 flex gap-2">
                 <Save size={18} />
                 {saving ? "Saving..." : "Save Pricing"}
               </Button>

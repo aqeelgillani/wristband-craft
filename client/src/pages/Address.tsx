@@ -12,6 +12,7 @@ import { ArrowLeft, Loader2, ShoppingCart, Check } from "lucide-react";
 interface LocationState {
   orderIds: string[];
   expressDelivery?: boolean;
+  selectedSupplierId?: string;
 }
 
 const Address = () => {
