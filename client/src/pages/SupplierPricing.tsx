@@ -53,7 +53,7 @@ const SupplierPricing = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [configs, setConfigs] = useState<PricingConfig[]>([]);
-  const [activeConfig, setActiveConfig] = useState<PricingConfig>(EMPTY_CONFIG);
+  const [activeTabIndex, setActiveTabIndex] = useState<number>(0);
 
   useEffect(() => {
     fetchPricing();
@@ -68,7 +68,7 @@ const SupplierPricing = () => {
         setActiveTabIndex(0);
       } else {
         setConfigs([EMPTY_CONFIG]);
-        setActiveConfig(EMPTY_CONFIG);
+        setActiveTabIndex(0);
       }
     } catch (error) {
       toast.error("Failed to load pricing data");
