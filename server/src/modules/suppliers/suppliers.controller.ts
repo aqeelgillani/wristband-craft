@@ -40,20 +40,15 @@ export class SuppliersController {
     return this.suppliersService.updatePricing(req.user.id, dto);
   }
 
-  @Get(':id/pricing')
-  getSupplierPricing(@Param('id') id: string) {
-    return this.suppliersService.getPricingBySupplierId(id);
+  @UseGuards(AuthGuard('jwt'))
+  @Get('me/products')
+  getMyProducts(@Request() req: any) {
+    return this.suppliersService.getMyProducts(req.user.id);
   }
 
   @Get(':id/products')
   getSupplierProducts(@Param('id') id: string) {
     return this.suppliersService.getProductsBySupplierId(id);
-  }
-
-  @UseGuards(AuthGuard('jwt'))
-  @Get('me/products')
-  getMyProducts(@Request() req: any) {
-    return this.suppliersService.getMyProducts(req.user.id);
   }
 
   @UseGuards(AuthGuard('jwt'))

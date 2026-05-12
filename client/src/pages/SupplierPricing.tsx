@@ -32,6 +32,8 @@ interface PricingConfig {
   secureGuestsExtraEur: number;
 }
 
+const WRISTBAND_TYPES = ["tyvek", "vinyl", "fabric", "silicone"] as const;
+
 const EMPTY_CONFIG: PricingConfig = {
   wristbandType: "tyvek",
   minQuantity: 0,
@@ -86,7 +88,7 @@ const SupplierPricing = () => {
 
   const handleAddNewType = () => {
     const newConfig: PricingConfig = {
-      ...DEFAULT_CONFIG,
+      ...EMPTY_CONFIG,
       wristbandType: WRISTBAND_TYPES.find(t => !configs.some(c => c.wristbandType === t)) || "tyvek",
     };
     setConfigs([...configs, newConfig]);
